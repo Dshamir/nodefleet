@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+www/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker volumes & backups
+backups/
+pgdata/
+mongodata/
+redisdata/
+rabbitmqdata/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Screenshots & media
+*.png
+*.jpg
+*.jpeg
+*.zip
+
+# Terminal logs
+terminallog*
+zensersession*
+
+# Session files (personal notes)
+SESSION_*.md
+CHECKPOINT_*.md
+FINAL_STATUS_*.md
+TROUBLESHOOTING_SESSION_*.md
+README_TOMORROW.md
+README_DOCUMENTATION.md
+WARP.md
