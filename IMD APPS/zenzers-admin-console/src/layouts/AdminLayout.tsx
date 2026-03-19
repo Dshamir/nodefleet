@@ -168,6 +168,14 @@ export function AdminLayout() {
         { label: 'Tenant Detail' },
       ]
     }
+    if (currentPath.startsWith('vitals-monitor/')) {
+      return [
+        { label: 'Dashboard', path: '' },
+        { label: 'MEDICAL' },
+        { label: 'Vitals Monitor', path: 'vitals-monitor' },
+        { label: 'Patient Detail' },
+      ]
+    }
     return [{ label: 'Dashboard', path: '' }]
   }
 

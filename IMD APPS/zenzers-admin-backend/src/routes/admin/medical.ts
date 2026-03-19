@@ -1,10 +1,17 @@
 import { Router, Request, Response } from 'express';
 import fetch from 'node-fetch';
+import { logAccess } from '../../services/data-access-log';
 
 const router = Router();
 const logger = require('../../logging').getLogger('medical-proxy');
 
 const MEDICAL_API_URL = process.env.MEDICAL_API_URL || 'http://medical-api:3002';
+
+// ---------------------------------------------------------------------------
+// In-memory cache for composite vitals/patients endpoint (30s TTL)
+// ---------------------------------------------------------------------------
+let compositeCache: { data: any; expires: number } | null = null;
+const CACHE_TTL = 30_000;
 
 // ---------------------------------------------------------------------------
 // Proxy helpers
@@ -106,6 +113,292 @@ router.get('/caregivers', (req, res) => proxyGet('/admin/caregivers', req, res, 
   })),
   total: raw.total || 0,
 })));
+
+// ---------------------------------------------------------------------------
+// Composite: Patient Vitals (fan-out 5 upstream APIs, join by patientId)
+// ---------------------------------------------------------------------------
+
+async function fetchCompositePatients(authHeader: string) {
+  if (compositeCache && Date.now() < compositeCache.expires) {
+    return compositeCache.data;
+  }
+
+  const headers = { 'Authorization': authHeader, 'Content-Type': 'application/json' };
+  const makeUrl = (path: string) => new URL(path, MEDICAL_API_URL).toString();
+
+  const [vitalsRes, patientsRes, doctorsRes, caregiversRes, gatewaysRes, dataAccessRes] =
+    await Promise.allSettled([
+      fetch(makeUrl('/admin/vitals/active'), { headers }),
+      fetch(makeUrl('/admin/patients'), { headers }),
+      fetch(makeUrl('/admin/doctors'), { headers }),
+      fetch(makeUrl('/admin/caregivers'), { headers }),
+      fetch(makeUrl('/admin/gateways'), { headers }),
+      fetch(makeUrl('/admin/data-access'), { headers }),
+    ]);
+
+  // Required endpoints — fail if either is missing
+  if (vitalsRes.status === 'rejected' || patientsRes.status === 'rejected') {
+    throw new Error('Required upstream API (vitals or patients) unavailable');
+  }
+  const vitalsRaw = await (vitalsRes as PromiseFulfilledResult<any>).value.json() as any;
+  const patientsRaw = await (patientsRes as PromiseFulfilledResult<any>).value.json() as any;
+
+  // Optional endpoints — null on failure
+  let doctorsRaw: any = null;
+  let caregiversRaw: any = null;
+  let gatewaysRaw: any = null;
+  let dataAccessRaw: any = null;
+
+  if (doctorsRes.status === 'fulfilled') {
+    try { doctorsRaw = await doctorsRes.value.json(); } catch { logger.warn('Failed to parse doctors response'); }
+  }
+  if (caregiversRes.status === 'fulfilled') {
+    try { caregiversRaw = await caregiversRes.value.json(); } catch { logger.warn('Failed to parse caregivers response'); }
+  }
+  if (gatewaysRes.status === 'fulfilled') {
+    try { gatewaysRaw = await gatewaysRes.value.json(); } catch { logger.warn('Failed to parse gateways response'); }
+  }
+  if (dataAccessRes.status === 'fulfilled') {
+    try { dataAccessRaw = await dataAccessRes.value.json(); } catch { logger.warn('Failed to parse data-access response'); }
+  }
+
+  // Build lookup maps
+  const patientMap: Record<string, any> = {};
+  for (const p of (patientsRaw.data || [])) {
+    patientMap[p.id] = p;
+  }
+
+  const doctorMap: Record<string, any> = {};
+  if (doctorsRaw?.data) {
+    for (const d of doctorsRaw.data) {
+      doctorMap[d.id] = d;
+    }
+  }
+
+  const caregiverMap: Record<string, any> = {};
+  if (caregiversRaw?.data) {
+    for (const c of caregiversRaw.data) {
+      caregiverMap[c.id] = c;
+    }
+  }
+
+  const gatewayByPatient: Record<string, any> = {};
+  if (gatewaysRaw?.data) {
+    for (const g of gatewaysRaw.data) {
+      const pid = g.userId || g.patientId;
+      if (pid) gatewayByPatient[pid] = g;
+    }
+  }
+
+  // data-access: doctor/caregiver → patient relationships
+  const doctorForPatient: Record<string, string> = {};
+  const caregiverForPatient: Record<string, string> = {};
+  if (dataAccessRaw?.data) {
+    for (const da of dataAccessRaw.data) {
+      const patientId = da.patientUserId;
+      const grantedId = da.grantedUserId;
+      const role = da.grantedUser?.role?.toLowerCase() || '';
+      if (role === 'caregiver') {
+        caregiverForPatient[patientId] = grantedId;
+      } else {
+        doctorForPatient[patientId] = grantedId;
+      }
+    }
+  }
+
+  // Group vitals by patient, keep most recent
+  const latestByPatient: Record<string, any> = {};
+  for (const v of (vitalsRaw.data || [])) {
+    const pid = v.userId;
+    if (!pid) continue;
+    const ts = v.createdAt || (v.timestamp ? new Date(v.timestamp * 1000).toISOString() : null);
+    if (!latestByPatient[pid] || (ts && ts > (latestByPatient[pid]._ts || ''))) {
+      latestByPatient[pid] = { ...v, _ts: ts };
+    }
+  }
+
+  // Build composite patient nodes
+  const patients: any[] = [];
+  for (const [pid, v] of Object.entries(latestByPatient)) {
+    const p = patientMap[pid];
+    let status: string = 'normal';
+    if ((v as any).fall) status = 'critical';
+    else if ((v as any).isHrNormal === false || (v as any).isSbpNormal === false || (v as any).isDbpNormal === false ||
+             (v as any).isSpo2Normal === false || (v as any).isTempNormal === false || (v as any).isRrNormal === false) {
+      status = 'warning';
+    }
+
+    const docId = doctorForPatient[pid];
+    const cgId = caregiverForPatient[pid];
+    const gw = gatewayByPatient[pid];
+    const doc = docId ? doctorMap[docId] : null;
+    const cg = cgId ? caregiverMap[cgId] : null;
+
+    patients.push({
+      patientId: pid,
+      patientName: p ? fullName(p) : fullName((v as any).user),
+      email: p?.email || '',
+      phone: p?.phone || '',
+      dateOfBirth: p?.patientMetadata?.dob || null,
+      doctor: doc ? {
+        id: doc.id,
+        name: fullName(doc),
+        email: doc.email || '',
+        phone: doc.phone || '',
+        specialization: doc.doctorMetadata?.specialty || doc.specialty || '',
+      } : null,
+      caregiver: cg ? {
+        id: cg.id,
+        name: fullName(cg),
+        email: cg.email || '',
+        phone: cg.phone || '',
+      } : null,
+      gateway: gw ? {
+        deviceId: gw.deviceId || gw.id,
+        status: gw.status || 'offline',
+        lastSeen: gw.lastSeen || gw.createdAt || null,
+        batteryPercent: gw.batteryPercent ?? 0,
+      } : null,
+      latestVitals: {
+        heartRate: (v as any).hr ?? null,
+        bloodPressureSystolic: (v as any).sbp ?? null,
+        bloodPressureDiastolic: (v as any).dbp ?? null,
+        temperature: (v as any).temp ?? null,
+        spO2: (v as any).spo2 ?? null,
+        timestamp: (v as any)._ts,
+        status,
+      },
+    });
+  }
+
+  const result = { patients, total: patients.length };
+  compositeCache = { data: result, expires: Date.now() + CACHE_TTL };
+  return result;
+}
+
+// GET /admin/vitals/patients — composite list
+router.get('/vitals/patients', async (req: Request, res: Response) => {
+  try {
+    const data = await fetchCompositePatients(req.headers.authorization || '');
+    logAccess({
+      userId: (req as any).userId || 'admin',
+      action: 'view',
+      resourceType: 'patient-vitals',
+      resourceId: 'list',
+      ipAddress: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
+    res.json(data);
+  } catch (err: any) {
+    logger.error(`Composite vitals/patients failed: ${err.message}`);
+    res.status(502).json({ error: 'Medical API unavailable', details: err.message });
+  }
+});
+
+// GET /admin/vitals/patients/:patientId — single patient composite
+router.get('/vitals/patients/:patientId', async (req: Request, res: Response) => {
+  try {
+    const data = await fetchCompositePatients(req.headers.authorization || '');
+    const patient = data.patients.find((p: any) => p.patientId === req.params.patientId);
+    if (!patient) {
+      res.status(404).json({ error: 'Patient not found' });
+      return;
+    }
+    logAccess({
+      userId: (req as any).userId || 'admin',
+      action: 'view',
+      resourceType: 'patient-vitals',
+      resourceId: req.params.patientId,
+      ipAddress: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
+    res.json({ patient });
+  } catch (err: any) {
+    logger.error(`Composite vitals/patients/:id failed: ${err.message}`);
+    res.status(502).json({ error: 'Medical API unavailable', details: err.message });
+  }
+});
+
+// GET /admin/vitals/:patientId/telemetry — paginated telemetry log
+router.get('/vitals/:patientId/telemetry', async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const url = new URL(`/admin/vitals/${req.params.patientId}`, MEDICAL_API_URL);
+    const response = await fetch(url.toString(), {
+      headers: {
+        'Authorization': req.headers.authorization || '',
+        'Content-Type': 'application/json',
+      },
+    });
+    const raw = await response.json() as any;
+    const allEntries = (raw.data || []).slice(0, 500); // cap at 500
+
+    const entries = allEntries.map((v: any) => {
+      let status: string = 'normal';
+      if (v.fall) status = 'critical';
+      else if (v.isHrNormal === false || v.isSbpNormal === false || v.isDbpNormal === false ||
+               v.isSpo2Normal === false || v.isTempNormal === false || v.isRrNormal === false) {
+        status = 'warning';
+      }
+      return {
+        id: v.id,
+        syncTimestamp: v.createdAt || (v.timestamp ? new Date(v.timestamp * 1000).toISOString() : null),
+        heartRate: v.hr ?? null,
+        bloodPressureSystolic: v.sbp ?? null,
+        bloodPressureDiastolic: v.dbp ?? null,
+        temperature: v.temp ?? null,
+        spO2: v.spo2 ?? null,
+        respiratoryRate: v.rr ?? null,
+        fall: !!v.fall,
+        status,
+        isHrNormal: v.isHrNormal ?? null,
+        isSbpNormal: v.isSbpNormal ?? null,
+        isDbpNormal: v.isDbpNormal ?? null,
+        isSpo2Normal: v.isSpo2Normal ?? null,
+        isTempNormal: v.isTempNormal ?? null,
+        isRrNormal: v.isRrNormal ?? null,
+      };
+    });
+
+    const start = (page - 1) * limit;
+    const paged = entries.slice(start, start + limit);
+
+    logAccess({
+      userId: (req as any).userId || 'admin',
+      action: 'view',
+      resourceType: 'patient-vitals',
+      resourceId: req.params.patientId,
+      fields: ['telemetry'],
+      ipAddress: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+    });
+
+    res.json({ entries: paged, total: entries.length, page, limit });
+  } catch (err: any) {
+    logger.error(`Telemetry fetch failed: ${err.message}`);
+    res.status(502).json({ error: 'Medical API unavailable', details: err.message });
+  }
+});
+
+// POST /admin/vitals/unmask-audit — HIPAA unmask event logging
+router.post('/vitals/unmask-audit', async (req: Request, res: Response) => {
+  try {
+    await logAccess({
+      userId: (req as any).userId || 'admin',
+      action: 'unmask-phi',
+      resourceType: 'patient-vitals',
+      resourceId: 'all',
+      ipAddress: req.ip || '',
+      userAgent: req.headers['user-agent'] || '',
+      reason: 'Admin toggled PHI unmask',
+    });
+    res.json({ ok: true });
+  } catch (err: any) {
+    logger.error(`Unmask audit log failed: ${err.message}`);
+    res.json({ ok: true }); // Don't fail the unmask action
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Vitals — expects { vitals: [{ id, patientId, patientName, heartRate,

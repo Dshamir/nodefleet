@@ -84,6 +84,7 @@ const PatientsPage = lazy(() => import('./pages/patients/PatientsPage').then(m =
 const DoctorsPage = lazy(() => import('./pages/doctors/DoctorsPage').then(m => ({ default: m.DoctorsPage })))
 const CaregiversPage = lazy(() => import('./pages/caregivers/CaregiversPage').then(m => ({ default: m.CaregiversPage })))
 const VitalsMonitorPage = lazy(() => import('./pages/vitals-monitor/VitalsMonitorPage').then(m => ({ default: m.VitalsMonitorPage })))
+const PatientDetailPage = lazy(() => import('./pages/vitals-monitor/PatientDetailPage').then(m => ({ default: m.PatientDetailPage })))
 const MedicalRecordsPage = lazy(() => import('./pages/medical-records/MedicalRecordsPage').then(m => ({ default: m.MedicalRecordsPage })))
 const EmergencyContactsPage = lazy(() => import('./pages/emergency-contacts/EmergencyContactsPage').then(m => ({ default: m.EmergencyContactsPage })))
 const DataAccessPage = lazy(() => import('./pages/data-access/DataAccessPage').then(m => ({ default: m.DataAccessPage })))
@@ -216,6 +217,7 @@ function App() {
             <Route path="doctors" element={<DoctorsPage />} />
             <Route path="caregivers" element={<CaregiversPage />} />
             <Route path="vitals-monitor" element={<VitalsMonitorPage />} />
+            <Route path="vitals-monitor/:patientId" element={<PatientDetailPage />} />
 
             {/* Medical Tools */}
             <Route path="medical-records" element={<MedicalRecordsPage />} />
