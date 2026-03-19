@@ -185,9 +185,14 @@ services:
     build:
       context: ./zenzers-admin-console
       dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+        VITE_KEYCLOAK_URL: https://zenzer.ngrok.dev/auth
+        VITE_KEYCLOAK_REALM: zenzers
+        VITE_KEYCLOAK_CLIENT_ID: admin-console-client
     environment:
       VITE_API_URL: /api
-      VITE_KEYCLOAK_URL: /auth
+      VITE_KEYCLOAK_URL: https://zenzer.ngrok.dev/auth
       VITE_KEYCLOAK_REALM: zenzers
       VITE_KEYCLOAK_CLIENT_ID: admin-console-client
     ports:
