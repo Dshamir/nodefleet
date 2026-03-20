@@ -147,8 +147,8 @@ for ROW in \
   "$PATIENT_ID|patient@test.local|Test|Patient|+15551110001|Patient|Patient" \
   "$DOCTOR_ID|doctor@test.local|Test|Doctor|+15551110002|Doctor|Doctor" \
   "$CAREGIVER_ID|caregiver@test.local|Test|Caregiver|+15551110003|Caregiver|CaregiverProfessional"; do
-  IFS='|' read -r UID UEMAIL UFIRST ULAST UPHONE UROLE ULABEL <<< "$ROW"
-  $PSQL -c "INSERT INTO \"user\" (id, email, first_name, last_name, phone, role, role_label, password_updated_at, measurement_system) VALUES ('$UID', '$UEMAIL', '$UFIRST', '$ULAST', '$UPHONE', '$UROLE', '$ULABEL', $NOW_UNIX, 'Metric') ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name;"
+  IFS='|' read -r USERID UEMAIL UFIRST ULAST UPHONE UROLE ULABEL <<< "$ROW"
+  $PSQL -c "INSERT INTO \"user\" (id, email, first_name, last_name, phone, role, role_label, password_updated_at, measurement_system) VALUES ('$USERID', '$UEMAIL', '$UFIRST', '$ULAST', '$UPHONE', '$UROLE', '$ULABEL', $NOW_UNIX, 'Metric') ON CONFLICT (id) DO UPDATE SET email = EXCLUDED.email, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name;"
   echo "    Upserted $UEMAIL ($UROLE)"
 done
 
