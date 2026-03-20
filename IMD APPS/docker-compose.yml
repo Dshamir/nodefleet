@@ -152,6 +152,7 @@ services:
       DB_PASSWORD: ${POSTGRES_PASSWORD}
       DB_NAME: medical_db
       KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_ISSUER_URL: https://zenzer.ngrok.dev/auth
       KEYCLOAK_REALM: zenzers
       KEYCLOAK_CLIENT_ID: medical-app-client
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}

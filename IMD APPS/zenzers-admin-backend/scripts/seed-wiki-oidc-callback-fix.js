@@ -83,6 +83,47 @@ Also patched the **live Keycloak** instance via admin API to add the ngrok URI i
 
 ---
 
+## Root Cause 3: JWT Issuer Mismatch in Medical API
+
+After fixing the nginx routing and Keycloak redirect URIs, authenticated API calls (e.g. \`/patient/emergency-contacts\`) returned **"Unauthorized"**.
+
+**Root cause:** The medical-api's \`KeycloakService.isTokenIssuerValid()\` compared:
+- Token's \`iss\` claim: \`https://zenzer.ngrok.dev/auth/realms/zenzers\` (set by \`KC_HOSTNAME\`)
+- Expected issuer: \`http://keycloak:8080/auth/realms/zenzers\` (from \`KEYCLOAK_URL\` env var)
+
+The medical-api uses \`KEYCLOAK_URL\` for **two different purposes**:
+1. **JWKS fetching & admin API calls** — needs internal Docker URL (\`http://keycloak:8080/auth\`)
+2. **Issuer validation** — needs to match the public URL in the token (\`https://zenzer.ngrok.dev/auth\`)
+
+### Fix
+
+Added \`KEYCLOAK_ISSUER_URL\` env var to separate the concerns:
+
+\`\`\`yaml
+# docker-compose.yml — medical-api environment
+KEYCLOAK_URL: http://keycloak:8080/auth          # Internal: JWKS + admin API
+KEYCLOAK_ISSUER_URL: https://zenzer.ngrok.dev/auth # Public: token issuer validation
+\`\`\`
+
+Updated \`keycloak.service.ts\` to use \`issuerUrl\` for token validation:
+
+\`\`\`typescript
+this.config = {
+    url: configService.get<string>('KEYCLOAK_URL'),
+    issuerUrl: configService.get<string>('KEYCLOAK_ISSUER_URL') || configService.get<string>('KEYCLOAK_URL'),
+    // ...
+};
+
+private isTokenIssuerValid(decodedToken: Record<string, any>): boolean {
+    const expectedIssuer = \`\${this.config.issuerUrl}/realms/\${this.config.realm}\`;
+    return decodedToken.iss === expectedIssuer;
+}
+\`\`\`
+
+Falls back to \`KEYCLOAK_URL\` if \`KEYCLOAK_ISSUER_URL\` is not set (backward compatible).
+
+---
+
 ## Key Concept: Nginx Location Block Priority
 
 Nginx processes location blocks in this priority order:
@@ -112,6 +153,8 @@ By using \`location = /auth/callback\`, the SPA callback is matched before the \
 |------|---------|
 | \`nginx/nginx.conf:47-52\` | Nginx routing — exact match for callback + prefix for Keycloak |
 | \`keycloak/setup-admin-console-client.sh\` | Client registration with redirect URIs |
+| \`docker-compose.yml:154-155\` | KEYCLOAK_URL + KEYCLOAK_ISSUER_URL for medical-api |
+| \`alevelsoft-med-api-*/src/infrastructure/keycloak/keycloak.service.ts\` | JWT issuer validation with split URL config |
 | \`alevelsoft-med-web-*/src/services/keycloak-auth.service.ts\` | OIDC config with \`redirect_uri: \${origin}/auth/callback\` |
 | \`alevelsoft-med-web-*/src/pages/Auth/AuthCallback.tsx\` | React callback handler component |
 | \`alevelsoft-med-web-*/docker/nginx.conf\` | SPA nginx with \`try_files\` fallback to index.html |
