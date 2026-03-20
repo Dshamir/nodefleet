@@ -29,6 +29,32 @@ services:
         condition: service_healthy
     networks:
       - zenzers-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/auth/realms/master || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+  # ── Object Storage ────────────────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-zenzers_minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "49000:9000"
+      - "49001:9001"
+    volumes:
+      - miniodata:/data
+    networks:
+      - zenzers-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      retries: 5
     restart: unless-stopped
 
   # ── Databases ──────────────────────────────────────────────────────────
@@ -64,6 +90,11 @@ services:
       - "47017:27017"
     networks:
       - zenzers-net
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.runCommand('ping').ok", "--quiet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   redis:
@@ -75,6 +106,11 @@ services:
       - redisdata:/data
     networks:
       - zenzers-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
     restart: unless-stopped
 
   rabbitmq:
@@ -89,6 +125,11 @@ services:
       - rabbitmqdata:/var/lib/rabbitmq
     networks:
       - zenzers-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
   # ── Admin Backend (Express.js) ─────────────────────────────────────────
@@ -107,7 +148,7 @@ services:
       AUTH_ISSUER: https://zenzer.ngrok.dev/auth/realms/zenzers
       ADMIN_AUTH_URL: http://keycloak:8080/auth/admin/realms/zenzers
       AUTH_CLIENT_ID: admin-console-client
-      AUTH_CLIENT_ID_BACKEND: admin-console-client
+      AUTH_CLIENT_ID_BACKEND: admin-backend-service
       AUTH_CLIENT_SECRET_BACKEND: ${AUTH_CLIENT_SECRET_BACKEND}
       INTERNAL_SERVICES_PASSKEY: ${INTERNAL_SERVICES_PASSKEY}
       EMAILS_FROM: "Zenzers 4Life <noreply@zenzers4life.com>"
@@ -136,6 +177,12 @@ services:
       - keycloak
     networks:
       - zenzers-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3001/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   # ── Medical API (NestJS) ───────────────────────────────────────────────
@@ -158,18 +205,19 @@ services:
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-}
       KEYCLOAK_ADMIN_USER: admin
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
-      USE_MAILHOG: "false"
       SMTP_HOST: ${EMAILS_SMTP_SERVER:-smtp.ethereal.email}
       SMTP_PORT: ${EMAILS_SMTP_PORT:-587}
       SMTP_USER: ${EMAILS_SMTP_USER:-}
       SMTP_PASS: ${EMAILS_SMTP_PASSWORD:-}
       MAIL_FROM_EMAIL: noreply@zenzers4life.com
       MAIL_FROM_NAME: "Zenzers 4Life"
-      BRANCH_IO_APP_ID: ${BRANCH_IO_APP_ID:-placeholder}
-      BRANCH_IO_KEY: ${BRANCH_IO_KEY:-placeholder}
-      BRANCH_IO_SECRET: ${BRANCH_IO_SECRET:-placeholder}
-      MOBILE_APP_URL: ${MOBILE_APP_URL:-zenzers4life://}
       WEB_APP_URL: ${WEB_APP_URL:-http://localhost:40080}
+      INTERNAL_SERVICES_PASSKEY: ${INTERNAL_SERVICES_PASSKEY}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-zenzers_minio}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: medical-avatars
+      MINIO_PUBLIC_URL: http://localhost:49000/medical-avatars/avatars/
     ports:
       - "43002:3002"
     depends_on:
@@ -177,8 +225,16 @@ services:
         condition: service_healthy
       keycloak:
         condition: service_started
+      minio:
+        condition: service_healthy
     networks:
       - zenzers-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3002/api || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     restart: unless-stopped
 
   # ── Admin Console (React 19 + Vite) ───────────────────────────────────
@@ -259,6 +315,7 @@ volumes:
   mongodata:
   redisdata:
   rabbitmqdata:
+  miniodata:
 
 networks:
   zenzers-net:

@@ -6,6 +6,7 @@ const router = Router();
 const logger = require('../../logging').getLogger('medical-proxy');
 
 const MEDICAL_API_URL = process.env.MEDICAL_API_URL || 'http://medical-api:3002';
+const INTERNAL_PASSKEY = process.env.INTERNAL_SERVICES_PASSKEY || '';
 
 // ---------------------------------------------------------------------------
 // In-memory cache for composite vitals/patients endpoint (30s TTL)
@@ -27,6 +28,7 @@ async function proxyGet(path: string, req: Request, res: Response, transform?: (
       headers: {
         'Authorization': req.headers.authorization || '',
         'Content-Type': 'application/json',
+        'X-Internal-Auth': INTERNAL_PASSKEY,
       },
     });
     let data = await response.json() as any;
@@ -48,6 +50,7 @@ async function proxyMutation(method: string, path: string, req: Request, res: Re
       headers: {
         'Authorization': req.headers.authorization || '',
         'Content-Type': 'application/json',
+        'X-Internal-Auth': INTERNAL_PASSKEY,
       },
       body: req.body ? JSON.stringify(req.body) : undefined,
     });
@@ -123,7 +126,7 @@ async function fetchCompositePatients(authHeader: string) {
     return compositeCache.data;
   }
 
-  const headers = { 'Authorization': authHeader, 'Content-Type': 'application/json' };
+  const headers = { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY };
   const makeUrl = (path: string) => new URL(path, MEDICAL_API_URL).toString();
 
   const [vitalsRes, patientsRes, doctorsRes, caregiversRes, gatewaysRes, dataAccessRes] =
@@ -329,6 +332,7 @@ router.get('/vitals/:patientId/telemetry', async (req: Request, res: Response) =
       headers: {
         'Authorization': req.headers.authorization || '',
         'Content-Type': 'application/json',
+        'X-Internal-Auth': INTERNAL_PASSKEY,
       },
     });
     const raw = await response.json() as any;
@@ -439,7 +443,7 @@ router.get('/vitals/:patientId', (req, res) => proxyGet(`/admin/vitals/${req.par
 router.get('/medical-records', async (req: Request, res: Response) => {
   try {
     const authHeader = req.headers.authorization || '';
-    const headers = { 'Authorization': authHeader, 'Content-Type': 'application/json' };
+    const headers = { 'Authorization': authHeader, 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY };
 
     // Fetch records, patients, and doctors in parallel
     const [recordsRes, patientsRes, doctorsRes] = await Promise.all([

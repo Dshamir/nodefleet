@@ -111,10 +111,32 @@ for ROLE in platform-operator patient doctor caregiver gateway; do
 done
 
 echo ""
+echo "==> Creating admin-backend-service (confidential client for backend-to-backend auth)..."
+BACKEND_CLIENT_ID="admin-backend-service"
+curl -s -X POST "$KEYCLOAK_URL/admin/realms/$REALM/clients" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "clientId": "'$BACKEND_CLIENT_ID'",
+    "name": "Zenzers 4Life Admin Backend Service",
+    "description": "Confidential client for admin-backend server-to-server auth",
+    "enabled": true,
+    "publicClient": false,
+    "serviceAccountsEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "standardFlowEnabled": false,
+    "implicitFlowEnabled": false,
+    "protocol": "openid-connect",
+    "secret": "'${AUTH_CLIENT_SECRET_BACKEND:-}''"
+  }'
+
+echo ""
 echo "==> Done!"
 echo "    Realm: $REALM"
 echo "    Admin client: $ADMIN_CLIENT_ID (redirect: $ADMIN_REDIRECT_URI)"
 echo "    Medical client: $MEDICAL_CLIENT_ID (redirect: $MEDICAL_REDIRECT_URI)"
+echo "    Backend client: $BACKEND_CLIENT_ID (confidential, service account)"
 echo "    Roles: platform-operator, patient, doctor, caregiver, gateway"
 echo ""
-echo "    Assign 'platform-operator' to admin users via Keycloak admin UI."
+echo "    Assign 'platform-operator' to admin users via Keycloak admin UI"
+echo "    or run: bash keycloak/assign-platform-operator.sh <email>"
