@@ -27,18 +27,20 @@ export default function LoginPage() {
       const result = await fetch("/api/auth/callback/credentials", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        redirect: "manual",
         body: new URLSearchParams({
           email,
           password,
           csrfToken,
-          redirect: "false",
-          json: "true",
         }),
       });
 
-      if (result.ok && result.url) {
-        router.push("/");
-        router.refresh();
+      // 302/307 = success (NextAuth redirects after login), 200 with error = failed
+      if (result.status === 302 || result.status === 307 || result.status === 0) {
+        window.location.href = "/devices";
+      } else if (result.ok) {
+        // NextAuth returns 200 with error page on failure
+        setError("Invalid email or password");
       } else {
         setError("Invalid email or password");
       }

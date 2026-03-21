@@ -32,7 +32,7 @@ export default auth((req) => {
   if (isPublicRoute) {
     // If already authenticated and trying to access login/register, redirect to home
     if (isAuthenticated && (pathname === '/login' || pathname === '/register')) {
-      return NextResponse.redirect(new URL('/', req.nextUrl.origin))
+      return NextResponse.redirect(new URL('/devices', req.nextUrl.origin))
     }
     return NextResponse.next()
   }
