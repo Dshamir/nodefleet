@@ -1,0 +1,37 @@
+{
+  "name": "nodefleet-ws-server",
+  "version": "1.0.0",
+  "description": "WebSocket server for real-time ESP32 device communication and dashboard connectivity",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --outDir dist",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit"
+  },
+  "keywords": [
+    "websocket",
+    "esp32",
+    "iot",
+    "realtime",
+    "device-communication"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.14.2",
+    "ioredis": "^5.3.2",
+    "uuid": "^9.0.1",
+    "dotenv": "^16.3.1",
+    "jsonwebtoken": "^9.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/ws": "^8.5.10",
+    "@types/node": "^20.10.5",
+    "@types/jsonwebtoken": "^9.0.7",
+    "tsx": "^4.7.0",
+    "tsup": "^8.5.0"
+  }
+}
