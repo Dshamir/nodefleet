@@ -10,7 +10,6 @@ import {
   Map,
   Settings,
   LogOut,
-  ChevronDown,
   Menu,
   X,
 } from "lucide-react";
@@ -18,7 +17,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
 const navItems = [
-  { label: "Overview", href: "/", icon: LayoutDashboard },
+  { label: "Overview", href: "/devices", icon: LayoutDashboard },
   { label: "Devices", href: "/devices", icon: Cpu },
   { label: "Content Library", href: "/content", icon: FileText },
   { label: "Schedules", href: "/schedules", icon: Clock },
@@ -26,15 +25,34 @@ const navItems = [
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  user: {
+    email?: string | null;
+    name?: string | null;
+    role?: string;
+    orgId?: string;
+  };
+}
+
+export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
   const isActive = (href: string) => {
-    if (href === "/") {
-      return pathname === "/" || pathname === "/dashboard";
-    }
     return pathname.startsWith(href);
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const res = await fetch("/api/auth/csrf");
+      const { csrfToken } = await res.json();
+      await fetch("/api/auth/signout", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ csrfToken }),
+      });
+    } catch {}
+    window.location.href = "/login";
   };
 
   return (
@@ -85,7 +103,7 @@ export function Sidebar() {
 
             return (
               <Link
-                key={item.href}
+                key={item.label}
                 href={item.href}
                 onClick={() => setIsOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
@@ -105,11 +123,17 @@ export function Sidebar() {
         <div className="border-t border-slate-800 p-4 space-y-3">
           <div className="px-4 py-3 bg-slate-900/50 rounded-lg">
             <p className="text-sm text-slate-400 mb-1">Logged in as</p>
-            <p className="text-white font-medium truncate">user@example.com</p>
+            <p className="text-white font-medium truncate">
+              {user.name || user.email || "Unknown"}
+            </p>
+            {user.name && user.email && (
+              <p className="text-xs text-slate-500 truncate">{user.email}</p>
+            )}
           </div>
           <Button
             variant="ghost"
             className="w-full text-slate-400 hover:text-error justify-start"
+            onClick={handleSignOut}
           >
             <LogOut className="w-5 h-5 mr-3" />
             Sign Out

@@ -15,7 +15,6 @@ const registerSchema = z.object({
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate request body
     const body = await request.json();
     const validated = registerSchema.parse(body);
 
@@ -28,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     if (existingUser && existingUser.length > 0) {
       return NextResponse.json(
-        { error: "User already exists" },
+        { message: "A user with this email already exists" },
         { status: 409 }
       );
     }
@@ -37,63 +36,59 @@ export async function POST(request: NextRequest) {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(validated.password, salt);
 
-    // Create user
+    // Create user (field: passwordHash matches schema)
     const userId = uuidv4();
-    const newUser = await db
-      .insert(users)
-      .values({
-        id: userId,
-        email: validated.email,
-        name: validated.name,
-        password: hashedPassword,
-        emailVerified: null,
-        image: null,
-      })
-      .returning();
+    await db.insert(users).values({
+      id: userId,
+      email: validated.email,
+      name: validated.name,
+      passwordHash: hashedPassword,
+      role: "user",
+    });
 
-    // Create organization
+    // Create organization (include required fields: slug, ownerId, storageLimit)
     const orgId = uuidv4();
-    const newOrg = await db
-      .insert(organizations)
-      .values({
-        id: orgId,
-        name: validated.orgName,
-        createdAt: new Date(),
-      })
-      .returning();
+    const slug = validated.orgName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+
+    await db.insert(organizations).values({
+      id: orgId,
+      name: validated.orgName,
+      slug: `${slug}-${orgId.slice(0, 8)}`,
+      ownerId: userId,
+      plan: "free",
+      deviceLimit: 3,
+      storageLimit: 1073741824, // 1GB
+    });
 
     // Create org member with owner role
-    const newMember = await db
-      .insert(orgMembers)
-      .values({
-        id: uuidv4(),
-        userId,
-        orgId,
-        role: "owner",
-        joinedAt: new Date(),
-      })
-      .returning();
+    await db.insert(orgMembers).values({
+      id: uuidv4(),
+      userId,
+      orgId,
+      role: "owner",
+    });
 
     return NextResponse.json(
       {
         success: true,
-        user: {
-          id: newUser[0].id,
-          email: newUser[0].email,
-          name: newUser[0].name,
-        },
-        organization: {
-          id: newOrg[0].id,
-          name: newOrg[0].name,
-        },
+        message: "Account created successfully",
       },
       { status: 201 }
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
+      return NextResponse.json(
+        { message: error.errors[0]?.message || "Validation error" },
+        { status: 400 }
+      );
     }
-    console.error("Error registering user:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    console.error("Registration error:", error);
+    return NextResponse.json(
+      { message: "An error occurred during registration" },
+      { status: 500 }
+    );
   }
 }
