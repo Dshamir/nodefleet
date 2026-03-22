@@ -215,6 +215,24 @@ The complete pairing flow has three steps:
 - The device is now online and visible on the dashboard.
 - The ESP32 sends periodic heartbeats, GPS coordinates, and telemetry data which appear in the device detail page.
 
+### Network Discovery Scanner
+
+The Devices page includes a **"Scan Network"** button that probes the local network for ESP32 devices.
+
+**How it works:**
+
+1. Click **"Scan Network"** on the `/devices` page. An animated radar-pulse visual indicates the scan is in progress.
+2. The scan calls `GET /api/discovery`, which broadcasts on UDP port 5556 looking for ESP32 devices and checks the ws-server discovery service on port 5555.
+3. After the scan completes (approximately 3 seconds), results are displayed:
+   - **Discovery service status badge** -- Shows whether the ws-server discovery service is online (green) or offline (red).
+   - **Device list** -- Each discovered ESP32 is shown with its IP address, serial number, hardware model, and firmware version.
+4. If no devices are found, an empty state is displayed with troubleshooting hints:
+   - Ensure ESP32 devices are powered on and connected to the same network.
+   - Verify that the ESP32 firmware includes the scan responder (listening on UDP port 5556 for `NODEFLEET_ESP32_SCAN`).
+   - Check that no firewall rules are blocking UDP port 5556.
+
+**ESP32 firmware requirement:** Devices must listen on UDP port 5556 for the `NODEFLEET_ESP32_SCAN` message and respond with a JSON payload containing `serialNumber`, `hwModel`, `firmware`, `status`, and `ip`. See [Device Discovery](DEVICE_DISCOVERY.md) for implementation details.
+
 ### Device Auto-Discovery
 
 ESP32 devices can automatically find the NodeFleet server on your local network:

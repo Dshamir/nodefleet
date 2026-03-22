@@ -925,6 +925,55 @@ Permanently revokes an API key.
 
 ---
 
+## Discovery
+
+### Scan Network for Devices
+
+```
+GET /api/discovery
+```
+
+Probes the ws-server discovery service on UDP port 5555 and broadcasts on UDP port 5556 to find ESP32 devices on the local network. The scan runs with a 3-second timeout.
+
+**Authentication:** Session cookie or API key.
+
+**Response (200):**
+
+```json
+{
+  "serverDiscoveryOnline": true,
+  "devices": [
+    {
+      "ip": "192.168.1.50",
+      "port": 5556,
+      "response": {
+        "serialNumber": "SN-ESP32-001",
+        "hwModel": "ESP32-S3",
+        "firmware": "1.0.0",
+        "status": "ready",
+        "ip": "192.168.1.50"
+      },
+      "discoveredAt": "2026-03-22T10:00:01.234Z"
+    }
+  ],
+  "scannedAt": "2026-03-22T10:00:03.500Z",
+  "message": "Scan complete. Found 1 device(s)."
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| serverDiscoveryOnline | boolean | Whether the ws-server discovery service (port 5555) responded |
+| devices | array | ESP32 devices that responded to the UDP 5556 broadcast |
+| devices[].ip | string | IP address of the discovered device |
+| devices[].port | number | UDP port the device responded from |
+| devices[].response | object | JSON payload returned by the device |
+| devices[].discoveredAt | string | ISO 8601 timestamp when the response was received |
+| scannedAt | string | ISO 8601 timestamp when the scan completed |
+| message | string | Human-readable summary |
+
+---
+
 ## Dashboard
 
 ### Get Dashboard Stats

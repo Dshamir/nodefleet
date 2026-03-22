@@ -153,6 +153,80 @@ The NodeFleet server supports automatic discovery on the local network. Instead 
 
 See the [Device Discovery documentation](../../docs/DEVICE_DISCOVERY.md) for complete implementation code and protocol details.
 
+## Network Scan Responder
+
+The NodeFleet dashboard can scan the local network to discover ESP32 devices before they are paired. To support this, the firmware should listen on UDP port 5556 for a `NODEFLEET_ESP32_SCAN` message and respond with device information.
+
+### Implementation
+
+Add the scan responder to your firmware:
+
+1. **Initialize in `setup()`** -- Call `scanUdp.begin(5556)` after WiFi is connected.
+2. **Poll in `loop()`** -- Check for incoming UDP packets on port 5556 each loop iteration.
+3. **Respond with JSON** -- When a packet containing `NODEFLEET_ESP32_SCAN` arrives, reply with:
+
+```json
+{
+  "serialNumber": "SN-ESP32-001",
+  "hwModel": "ESP32-S3",
+  "firmware": "1.0.0",
+  "status": "ready",
+  "ip": "192.168.1.50"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| serialNumber | string | Device serial number (from `config.h` or NVS) |
+| hwModel | string | Hardware model (e.g., `"ESP32-S3"`) |
+| firmware | string | Current firmware version string |
+| status | string | `"ready"` if unpaired, `"paired"` if already paired |
+| ip | string | Device's current WiFi IP address |
+
+### Example Code
+
+```cpp
+#include <WiFiUdp.h>
+#include <ArduinoJson.h>
+
+#define SCAN_PORT 5556
+#define SCAN_MAGIC "NODEFLEET_ESP32_SCAN"
+
+WiFiUDP scanUdp;
+
+void setupScanResponder() {
+  scanUdp.begin(SCAN_PORT);
+}
+
+void handleScanRequests() {
+  int packetSize = scanUdp.parsePacket();
+  if (packetSize <= 0) return;
+
+  char buf[64];
+  int len = scanUdp.read(buf, sizeof(buf) - 1);
+  buf[len] = '\0';
+  if (strcmp(buf, SCAN_MAGIC) != 0) return;
+
+  StaticJsonDocument<256> doc;
+  doc["serialNumber"] = DEVICE_SERIAL;
+  doc["hwModel"]      = DEVICE_HW_MODEL;
+  doc["firmware"]     = FIRMWARE_VERSION;
+  doc["status"]       = isPaired ? "paired" : "ready";
+  doc["ip"]           = WiFi.localIP().toString();
+
+  char resp[256];
+  serializeJson(doc, resp, sizeof(resp));
+
+  scanUdp.beginPacket(scanUdp.remoteIP(), scanUdp.remotePort());
+  scanUdp.print(resp);
+  scanUdp.endPacket();
+}
+```
+
+Call `setupScanResponder()` in `setup()` after WiFi connects, and `handleScanRequests()` at the top of `loop()`. See the [Device Discovery documentation](../../docs/DEVICE_DISCOVERY.md) for the full protocol specification.
+
+---
+
 ## First Boot & Provisioning
 
 ### Step 1: Flash Firmware
