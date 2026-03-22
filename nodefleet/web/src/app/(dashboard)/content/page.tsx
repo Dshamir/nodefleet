@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import {
   Image,
   Video,
@@ -21,63 +22,81 @@ import {
   Trash2,
   Grid,
   List,
+  Loader2,
 } from "lucide-react";
+
+interface ContentItem {
+  id: string;
+  type: string;
+  filename: string;
+  originalFilename: string;
+  mimeType: string;
+  size: number;
+  s3Key: string;
+  deviceId: string | null;
+  uploadedAt: string;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSeconds = Math.floor(diffMs / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  const diffHours = Math.floor(diffMinutes / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  const diffWeeks = Math.floor(diffDays / 7);
+  const diffMonths = Math.floor(diffDays / 30);
+
+  if (diffSeconds < 60) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffWeeks < 5) return `${diffWeeks}w ago`;
+  return `${diffMonths}mo ago`;
+}
+
+function deriveType(mimeType: string): string {
+  if (mimeType.startsWith("image/")) return "image";
+  if (mimeType.startsWith("video/")) return "video";
+  if (mimeType.startsWith("audio/")) return "audio";
+  return "document";
+}
 
 export default function ContentLibraryPage() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [selectedItems, setSelectedItems] = useState<number[]>([]);
+  const [search, setSearch] = useState("");
+  const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [contentItems, setContentItems] = useState<ContentItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const contentItems = [
-    {
-      id: 1,
-      filename: "photo_001.jpg",
-      type: "image",
-      size: "2.4 MB",
-      date: "2024-01-15 14:32",
-      device: "GPS Camera 01",
-    },
-    {
-      id: 2,
-      filename: "photo_002.jpg",
-      type: "image",
-      size: "2.1 MB",
-      date: "2024-01-15 14:28",
-      device: "GPS Camera 01",
-    },
-    {
-      id: 3,
-      filename: "video_001.mp4",
-      type: "video",
-      size: "45.2 MB",
-      date: "2024-01-15 14:20",
-      device: "Sensor Unit 15",
-    },
-    {
-      id: 4,
-      filename: "audio_001.wav",
-      type: "audio",
-      size: "1.8 MB",
-      date: "2024-01-15 14:15",
-      device: "Audio Logger 08",
-    },
-    {
-      id: 5,
-      filename: "audio_002.wav",
-      type: "audio",
-      size: "2.3 MB",
-      date: "2024-01-15 14:10",
-      device: "Audio Logger 08",
-    },
-    {
-      id: 6,
-      filename: "report_jan.pdf",
-      type: "document",
-      size: "1.2 MB",
-      date: "2024-01-15 12:00",
-      device: "Fleet Monitor 03",
-    },
-  ];
+  useEffect(() => {
+    async function fetchContent() {
+      try {
+        setLoading(true);
+        setError(null);
+        const res = await fetch("/api/content");
+        if (!res.ok) throw new Error("Failed to fetch content");
+        const data = await res.json();
+        setContentItems(data.data || data);
+      } catch (err: any) {
+        setError(err.message || "Failed to load content");
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchContent();
+  }, []);
 
   const typeIcons: Record<string, React.ReactNode> = {
     image: <Image className="w-4 h-4" />,
@@ -93,12 +112,17 @@ export default function ContentLibraryPage() {
     document: "Document",
   };
 
-  const filteredItems =
-    typeFilter === "all"
-      ? contentItems
-      : contentItems.filter((item) => item.type === typeFilter);
+  const filteredItems = contentItems.filter((item) => {
+    const itemType = deriveType(item.mimeType);
+    const matchesType = typeFilter === "all" || itemType === typeFilter;
+    const matchesSearch =
+      search === "" ||
+      item.filename.toLowerCase().includes(search.toLowerCase()) ||
+      item.originalFilename.toLowerCase().includes(search.toLowerCase());
+    return matchesType && matchesSearch;
+  });
 
-  const toggleSelection = (id: number) => {
+  const toggleSelection = (id: string) => {
     setSelectedItems((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
     );
@@ -139,6 +163,12 @@ export default function ContentLibraryPage() {
         <CardContent className="pt-6">
           <div className="flex items-center justify-between flex-col md:flex-row gap-4">
             <div className="flex items-center gap-4 flex-1">
+              <Input
+                placeholder="Search files..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-64 bg-slate-800 border-slate-700"
+              />
               <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="w-48 bg-slate-800 border-slate-700">
                   <SelectValue />
@@ -187,142 +217,197 @@ export default function ContentLibraryPage() {
         </CardContent>
       </Card>
 
-      {/* Content Grid */}
-      {viewMode === "grid" ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredItems.map((item) => (
-            <Card
-              key={item.id}
-              className={`bg-slate-900/50 border-slate-800 cursor-pointer transition-all hover:border-primary/50 ${
-                selectedItems.includes(item.id)
-                  ? "ring-2 ring-primary"
-                  : ""
-              }`}
-              onClick={() => toggleSelection(item.id)}
-            >
-              <CardContent className="pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center text-primary">
-                    {typeIcons[item.type]}
-                  </div>
-                  {selectedItems.includes(item.id) && (
-                    <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm">✓</span>
-                    </div>
-                  )}
-                </div>
-                <h3 className="font-medium text-white mb-2 truncate">
-                  {item.filename}
-                </h3>
-                <div className="space-y-2 text-sm">
-                  <Badge variant="secondary" className="text-xs">
-                    {typeLabels[item.type]}
-                  </Badge>
-                  <p className="text-slate-400">{item.size}</p>
-                  <p className="text-slate-500">{item.device}</p>
-                  <p className="text-slate-500 text-xs">{item.date}</p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-4 gap-2"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Download className="w-4 h-4" />
-                  Download
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="ml-3 text-slate-400">Loading content...</span>
         </div>
-      ) : (
-        <Card className="bg-slate-900/50 border-slate-800 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-900/30">
-                  <th className="px-6 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      className="rounded cursor-pointer"
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedItems(filteredItems.map((i) => i.id));
-                        } else {
-                          setSelectedItems([]);
-                        }
-                      }}
-                      checked={selectedItems.length === filteredItems.length}
-                    />
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
-                    Filename
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
-                    Type
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
-                    Size
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
-                    Device
-                  </th>
-                  <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-right text-sm font-medium text-slate-300">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {filteredItems.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-slate-900/30 transition-colors"
-                  >
-                    <td className="px-6 py-3">
-                      <input
-                        type="checkbox"
-                        className="rounded cursor-pointer"
-                        checked={selectedItems.includes(item.id)}
-                        onChange={() => toggleSelection(item.id)}
-                      />
-                    </td>
-                    <td className="px-6 py-3 text-white">{item.filename}</td>
-                    <td className="px-6 py-3">
-                      <Badge variant="secondary" className="text-xs gap-1">
-                        {typeIcons[item.type]}
-                        {typeLabels[item.type]}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-3 text-slate-400 text-sm">{item.size}</td>
-                    <td className="px-6 py-3 text-slate-400 text-sm">
-                      {item.device}
-                    </td>
-                    <td className="px-6 py-3 text-slate-400 text-sm">{item.date}</td>
-                    <td className="px-6 py-3 text-right">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="gap-2 text-primary hover:text-primary-light"
-                      >
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <Card className="bg-red-900/20 border-red-800">
+          <CardContent className="pt-6 text-center">
+            <p className="text-red-400">{error}</p>
+          </CardContent>
         </Card>
       )}
 
+      {/* Empty State */}
+      {!loading && !error && filteredItems.length === 0 && (
+        <Card className="bg-slate-900/50 border-slate-800">
+          <CardContent className="pt-12 pb-12 text-center">
+            <FileText className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+            <p className="text-slate-400 text-lg">No content found</p>
+            <p className="text-slate-500 text-sm mt-1">
+              Upload files or adjust your filters
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Content Grid */}
+      {!loading && !error && filteredItems.length > 0 && (
+        <>
+          {viewMode === "grid" ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filteredItems.map((item) => {
+                const itemType = deriveType(item.mimeType);
+                return (
+                  <Card
+                    key={item.id}
+                    className={`bg-slate-900/50 border-slate-800 cursor-pointer transition-all hover:border-primary/50 ${
+                      selectedItems.includes(item.id)
+                        ? "ring-2 ring-primary"
+                        : ""
+                    }`}
+                    onClick={() => toggleSelection(item.id)}
+                  >
+                    <CardContent className="pt-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center text-primary">
+                          {typeIcons[itemType]}
+                        </div>
+                        {selectedItems.includes(item.id) && (
+                          <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                            <span className="text-white text-sm">✓</span>
+                          </div>
+                        )}
+                      </div>
+                      <h3 className="font-medium text-white mb-2 truncate">
+                        {item.originalFilename || item.filename}
+                      </h3>
+                      <div className="space-y-2 text-sm">
+                        <Badge variant="secondary" className="text-xs">
+                          {typeLabels[itemType]}
+                        </Badge>
+                        <p className="text-slate-400">{formatFileSize(item.size)}</p>
+                        <p className="text-slate-500">
+                          {item.deviceId || "Unknown"}
+                        </p>
+                        <p className="text-slate-500 text-xs">
+                          {formatRelativeTime(item.uploadedAt)}
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-4 gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          ) : (
+            <Card className="bg-slate-900/50 border-slate-800 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-slate-800 bg-slate-900/30">
+                      <th className="px-6 py-3 text-left">
+                        <input
+                          type="checkbox"
+                          className="rounded cursor-pointer"
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedItems(filteredItems.map((i) => i.id));
+                            } else {
+                              setSelectedItems([]);
+                            }
+                          }}
+                          checked={
+                            filteredItems.length > 0 &&
+                            selectedItems.length === filteredItems.length
+                          }
+                        />
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
+                        Filename
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
+                        Type
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
+                        Size
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
+                        Device
+                      </th>
+                      <th className="px-6 py-3 text-left text-sm font-medium text-slate-300">
+                        Date
+                      </th>
+                      <th className="px-6 py-3 text-right text-sm font-medium text-slate-300">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {filteredItems.map((item) => {
+                      const itemType = deriveType(item.mimeType);
+                      return (
+                        <tr
+                          key={item.id}
+                          className="hover:bg-slate-900/30 transition-colors"
+                        >
+                          <td className="px-6 py-3">
+                            <input
+                              type="checkbox"
+                              className="rounded cursor-pointer"
+                              checked={selectedItems.includes(item.id)}
+                              onChange={() => toggleSelection(item.id)}
+                            />
+                          </td>
+                          <td className="px-6 py-3 text-white">
+                            {item.originalFilename || item.filename}
+                          </td>
+                          <td className="px-6 py-3">
+                            <Badge variant="secondary" className="text-xs gap-1">
+                              {typeIcons[itemType]}
+                              {typeLabels[itemType]}
+                            </Badge>
+                          </td>
+                          <td className="px-6 py-3 text-slate-400 text-sm">
+                            {formatFileSize(item.size)}
+                          </td>
+                          <td className="px-6 py-3 text-slate-400 text-sm">
+                            {item.deviceId || "Unknown"}
+                          </td>
+                          <td className="px-6 py-3 text-slate-400 text-sm">
+                            {formatRelativeTime(item.uploadedAt)}
+                          </td>
+                          <td className="px-6 py-3 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="gap-2 text-primary hover:text-primary-light"
+                            >
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+        </>
+      )}
+
       {/* Item Count */}
-      <p className="text-sm text-slate-400">
-        Showing {filteredItems.length} of {contentItems.length} files
-        {selectedItems.length > 0 && ` • ${selectedItems.length} selected`}
-      </p>
+      {!loading && !error && (
+        <p className="text-sm text-slate-400">
+          Showing {filteredItems.length} of {contentItems.length} files
+          {selectedItems.length > 0 && ` • ${selectedItems.length} selected`}
+        </p>
+      )}
     </div>
   );
 }

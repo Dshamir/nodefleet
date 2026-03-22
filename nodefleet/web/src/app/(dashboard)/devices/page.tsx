@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,46 @@ import {
 import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
 import { Plus, Copy, Check, Search } from "lucide-react";
 
+interface Device {
+  id: string;
+  name: string;
+  hwModel: string;
+  serialNumber: string;
+  status: "online" | "offline" | "pairing" | "disabled";
+  firmwareVersion: string;
+  lastHeartbeatAt: string | null;
+  lastIp: string;
+}
+
+interface DevicesResponse {
+  devices: Device[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+function formatRelativeTime(dateString: string | null): string {
+  if (!dateString) return "N/A";
+
+  const now = Date.now();
+  const then = new Date(dateString).getTime();
+  const diffMs = now - then;
+
+  if (isNaN(then)) return "N/A";
+
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return seconds <= 1 ? "just now" : `${seconds} sec ago`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes === 1 ? "1 min ago" : `${minutes} min ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? "1 hour ago" : `${hours} hours ago`;
+
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
 export default function DevicesPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -39,58 +79,37 @@ export default function DevicesPage() {
   const [copiedCode, setCopiedCode] = useState(false);
   const pairingCode = "DEV-2024-ABC123XYZ";
 
-  const devices = [
-    {
-      id: 1,
-      name: "GPS Camera 01",
-      model: "ESP32-CAM",
-      status: "online" as const,
-      lastHeartbeat: "2 min ago",
-      battery: "87%",
-      signal: "-45 dBm",
-    },
-    {
-      id: 2,
-      name: "Sensor Unit 15",
-      model: "ESP32-S3",
-      status: "online" as const,
-      lastHeartbeat: "5 min ago",
-      battery: "94%",
-      signal: "-52 dBm",
-    },
-    {
-      id: 3,
-      name: "Audio Logger 08",
-      model: "ESP32-Lite",
-      status: "offline" as const,
-      lastHeartbeat: "45 min ago",
-      battery: "32%",
-      signal: "N/A",
-    },
-    {
-      id: 4,
-      name: "Fleet Monitor 03",
-      model: "ESP32-CAM",
-      status: "online" as const,
-      lastHeartbeat: "1 min ago",
-      battery: "76%",
-      signal: "-38 dBm",
-    },
-    {
-      id: 5,
-      name: "Mobile Unit 12",
-      model: "ESP32-S3",
-      status: "pairing" as const,
-      lastHeartbeat: "N/A",
-      battery: "N/A",
-      signal: "N/A",
-    },
-  ];
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchDevices() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/devices");
+        if (!res.ok) {
+          throw new Error(`Failed to fetch devices (${res.status})`);
+        }
+        const data: DevicesResponse = await res.json();
+        setDevices(data.data || data.devices || []);
+        setTotal(data.pagination?.total ?? data.total ?? 0);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch devices");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDevices();
+  }, []);
 
   const filteredDevices = devices.filter((device) => {
     const matchesSearch =
       device.name.toLowerCase().includes(search.toLowerCase()) ||
-      device.model.toLowerCase().includes(search.toLowerCase());
+      device.hwModel.toLowerCase().includes(search.toLowerCase());
 
     if (statusFilter === "all") return matchesSearch;
     return matchesSearch && device.status === statusFilter;
@@ -204,12 +223,26 @@ export default function DevicesPage() {
                 <TableHead>Model</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Last Heartbeat</TableHead>
-                <TableHead>Battery</TableHead>
-                <TableHead>Signal</TableHead>
+                <TableHead>Serial Number</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredDevices.length > 0 ? (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">
+                    <div className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-slate-500 border-t-primary rounded-full animate-spin" />
+                      Loading devices...
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : error ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center py-8 text-red-400">
+                    {error}
+                  </TableCell>
+                </TableRow>
+              ) : filteredDevices.length > 0 ? (
                 filteredDevices.map((device) => (
                   <TableRow key={device.id} className="hover:bg-slate-800/50">
                     <TableCell>
@@ -220,30 +253,21 @@ export default function DevicesPage() {
                         {device.name}
                       </a>
                     </TableCell>
-                    <TableCell className="text-slate-400">{device.model}</TableCell>
+                    <TableCell className="text-slate-400">{device.hwModel}</TableCell>
                     <TableCell>
                       <DeviceStatusBadge status={device.status} />
                     </TableCell>
                     <TableCell className="text-slate-400 text-sm">
-                      {device.lastHeartbeat}
+                      {formatRelativeTime(device.lastHeartbeatAt)}
                     </TableCell>
-                    <TableCell className="text-slate-400">
-                      {device.battery !== "N/A" ? (
-                        <span className={device.battery.startsWith("3") || device.battery.startsWith("2") ? "text-warning" : ""}>
-                          {device.battery}
-                        </span>
-                      ) : (
-                        "N/A"
-                      )}
-                    </TableCell>
-                    <TableCell className="text-slate-400 text-sm">
-                      {device.signal}
+                    <TableCell className="text-slate-400 text-sm font-mono">
+                      {device.serialNumber}
                     </TableCell>
                   </TableRow>
                 ))
               ) : (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-slate-400">
+                  <TableCell colSpan={5} className="text-center py-8 text-slate-400">
                     No devices found
                   </TableCell>
                 </TableRow>
@@ -255,7 +279,7 @@ export default function DevicesPage() {
 
       {/* Device Count */}
       <p className="text-sm text-slate-400">
-        Showing {filteredDevices.length} of {devices.length} devices
+        Showing {filteredDevices.length} of {total} devices
       </p>
     </div>
   );
