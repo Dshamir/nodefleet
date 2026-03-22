@@ -135,7 +135,7 @@ GET /api/devices
 
 ```json
 {
-  "devices": [
+  "data": [
     {
       "id": "clx...",
       "name": "Lobby Display",
@@ -145,9 +145,7 @@ GET /api/devices
       "lastSeen": "2026-03-21T12:00:00.000Z"
     }
   ],
-  "total": 1,
-  "page": 1,
-  "limit": 20
+  "pagination": { "page": 1, "limit": 20, "total": 1 }
 }
 ```
 
@@ -318,16 +316,19 @@ GET /api/devices/[id]/telemetry
 **Response (200):**
 
 ```json
-[
-  {
-    "cpuUsage": 45.2,
-    "memUsage": 62.1,
-    "diskUsage": 38.0,
-    "temperature": 55.3,
-    "uptime": 86400,
-    "createdAt": "2026-03-21T12:00:00.000Z"
-  }
-]
+{
+  "data": [
+    {
+      "cpuUsage": 45.2,
+      "memUsage": 62.1,
+      "diskUsage": 38.0,
+      "temperature": 55.3,
+      "uptime": 86400,
+      "createdAt": "2026-03-21T12:00:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 100, "total": 1 }
+}
 ```
 
 ### Get GPS Track
@@ -347,13 +348,16 @@ GET /api/devices/[id]/gps
 **Response (200):**
 
 ```json
-[
-  {
-    "lat": 40.7128,
-    "lng": -74.0060,
-    "createdAt": "2026-03-21T12:00:00.000Z"
-  }
-]
+{
+  "data": [
+    {
+      "lat": 40.7128,
+      "lng": -74.0060,
+      "createdAt": "2026-03-21T12:00:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 100, "total": 1 }
+}
 ```
 
 ---
@@ -371,15 +375,18 @@ GET /api/content
 **Response (200):**
 
 ```json
-[
-  {
-    "id": "clx...",
-    "filename": "promo-video.mp4",
-    "contentType": "video/mp4",
-    "size": 10485760,
-    "createdAt": "2026-03-21T12:00:00.000Z"
-  }
-]
+{
+  "data": [
+    {
+      "id": "clx...",
+      "filename": "promo-video.mp4",
+      "contentType": "video/mp4",
+      "size": 10485760,
+      "createdAt": "2026-03-21T12:00:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1 }
+}
 ```
 
 ### Create Media Record
@@ -456,15 +463,18 @@ GET /api/schedules
 **Response (200):**
 
 ```json
-[
-  {
-    "id": "clx...",
-    "name": "Morning Rotation",
-    "cronExpression": "0 8 * * *",
-    "repeatType": "DAILY",
-    "createdAt": "2026-03-21T12:00:00.000Z"
-  }
-]
+{
+  "data": [
+    {
+      "id": "clx...",
+      "name": "Morning Rotation",
+      "cronExpression": "0 8 * * *",
+      "repeatType": "DAILY",
+      "createdAt": "2026-03-21T12:00:00.000Z"
+    }
+  ],
+  "pagination": { "page": 1, "limit": 20, "total": 1 }
+}
 ```
 
 ### Create Schedule

@@ -52,159 +52,52 @@ This starts PostgreSQL, Redis, MinIO, the Next.js web application, and the WebSo
 Connect to the PostgreSQL instance and run the following SQL to set up the schema and a test user.
 
 ```bash
-docker compose exec postgres psql -U nodefleet -d nodefleet
+docker exec -i nodefleet-postgres psql -U nodefleet -d nodefleet
 ```
 
-Then execute:
+The database tables are created automatically when the application starts. To seed test data, run the following SQL:
 
 ```sql
--- Create enums
-CREATE TYPE "DeviceStatus" AS ENUM ('PENDING', 'ONLINE', 'OFFLINE', 'ERROR');
-CREATE TYPE "CommandType" AS ENUM ('REBOOT', 'UPDATE', 'PLAY', 'STOP', 'CUSTOM');
-CREATE TYPE "CommandStatus" AS ENUM ('PENDING', 'SENT', 'ACKNOWLEDGED', 'FAILED');
-CREATE TYPE "RepeatType" AS ENUM ('ONCE', 'DAILY', 'WEEKLY', 'MONTHLY');
+-- Seed test user (password: test1234)
+INSERT INTO users (id, email, name, password_hash, role) VALUES
+  ('a0000000-0000-0000-0000-000000000001', 'test@nodefleet.io', 'Test User',
+   '$2b$10$Rc3vxncpXSfCxlKJ/UJ2h.a29HXyCfe/WqiflWezj27YWiMOOjE26', 'admin');
 
--- Create organizations table
-CREATE TABLE "Organization" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "Organization_pkey" PRIMARY KEY ("id")
-);
+-- Seed organization
+INSERT INTO organizations (id, name, slug, owner_id, plan, device_limit, storage_limit) VALUES
+  ('b0000000-0000-0000-0000-000000000001', 'Test Organization', 'test-org',
+   'a0000000-0000-0000-0000-000000000001', 'pro', 10, 10737418240);
 
--- Create users table
-CREATE TABLE "User" (
-    "id" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
-    "password" TEXT NOT NULL,
-    "name" TEXT,
-    "orgId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "User_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "User_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
+-- Seed org membership
+INSERT INTO org_members (org_id, user_id, role) VALUES
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'owner');
 
--- Create devices table
-CREATE TABLE "Device" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "hwModel" TEXT NOT NULL,
-    "serialNumber" TEXT NOT NULL,
-    "status" "DeviceStatus" NOT NULL DEFAULT 'PENDING',
-    "pairingCode" TEXT,
-    "jwtSecret" TEXT,
-    "lastSeen" TIMESTAMP(3),
-    "orgId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "Device_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "Device_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE
-);
-CREATE UNIQUE INDEX "Device_serialNumber_key" ON "Device"("serialNumber");
-CREATE UNIQUE INDEX "Device_pairingCode_key" ON "Device"("pairingCode");
-
--- Create telemetry table
-CREATE TABLE "Telemetry" (
-    "id" TEXT NOT NULL,
-    "deviceId" TEXT NOT NULL,
-    "cpuUsage" DOUBLE PRECISION,
-    "memUsage" DOUBLE PRECISION,
-    "diskUsage" DOUBLE PRECISION,
-    "temperature" DOUBLE PRECISION,
-    "uptime" INTEGER,
-    "lat" DOUBLE PRECISION,
-    "lng" DOUBLE PRECISION,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "Telemetry_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "Telemetry_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device"("id") ON DELETE CASCADE
-);
-
--- Create commands table
-CREATE TABLE "Command" (
-    "id" TEXT NOT NULL,
-    "deviceId" TEXT NOT NULL,
-    "command" "CommandType" NOT NULL,
-    "payload" JSONB,
-    "status" "CommandStatus" NOT NULL DEFAULT 'PENDING',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "Command_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "Command_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device"("id") ON DELETE CASCADE
-);
-
--- Create content table
-CREATE TABLE "Content" (
-    "id" TEXT NOT NULL,
-    "filename" TEXT NOT NULL,
-    "contentType" TEXT NOT NULL,
-    "size" INTEGER NOT NULL,
-    "s3Key" TEXT NOT NULL,
-    "orgId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "Content_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "Content_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE
-);
-
--- Create schedules table
-CREATE TABLE "Schedule" (
-    "id" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "description" TEXT,
-    "cronExpression" TEXT NOT NULL,
-    "repeatType" "RepeatType" NOT NULL,
-    "orgId" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "Schedule_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "Schedule_orgId_fkey" FOREIGN KEY ("orgId") REFERENCES "Organization"("id") ON DELETE CASCADE
-);
-
--- Create schedule items table
-CREATE TABLE "ScheduleItem" (
-    "id" TEXT NOT NULL,
-    "scheduleId" TEXT NOT NULL,
-    "contentId" TEXT NOT NULL,
-    "duration" INTEGER NOT NULL,
-    "order" INTEGER NOT NULL,
-    CONSTRAINT "ScheduleItem_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "ScheduleItem_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "Schedule"("id") ON DELETE CASCADE,
-    CONSTRAINT "ScheduleItem_contentId_fkey" FOREIGN KEY ("contentId") REFERENCES "Content"("id") ON DELETE CASCADE
-);
-
--- Create device-schedule assignments table
-CREATE TABLE "DeviceSchedule" (
-    "deviceId" TEXT NOT NULL,
-    "scheduleId" TEXT NOT NULL,
-    CONSTRAINT "DeviceSchedule_pkey" PRIMARY KEY ("deviceId", "scheduleId"),
-    CONSTRAINT "DeviceSchedule_deviceId_fkey" FOREIGN KEY ("deviceId") REFERENCES "Device"("id") ON DELETE CASCADE,
-    CONSTRAINT "DeviceSchedule_scheduleId_fkey" FOREIGN KEY ("scheduleId") REFERENCES "Schedule"("id") ON DELETE CASCADE
-);
-
--- Insert test organization and user
--- Password: test1234 (bcrypt hash)
-INSERT INTO "Organization" ("id", "name", "createdAt", "updatedAt")
-VALUES ('org-test-001', 'Test Organization', NOW(), NOW());
-
-INSERT INTO "User" ("id", "email", "password", "name", "orgId", "createdAt", "updatedAt")
-VALUES (
-    'user-test-001',
-    'admin@example.com',
-    '$2b$10$Rc3vxncpXSfCxlKJ/UJ2h.a29HXyCfe/WqiflWezj27YWiMOOjE26',
-    'Admin User',
-    'org-test-001',
-    NOW(),
-    NOW()
-);
+-- Seed demo devices
+INSERT INTO devices (org_id, name, hw_model, serial_number, pairing_code, status, firmware_version, last_heartbeat_at, last_ip) VALUES
+  ('b0000000-0000-0000-0000-000000000001', 'Gateway Alpha', 'ESP32-S3', 'NF-ESP32-001', 'A1B2C3', 'online', '2.3.1', now() - interval '2 minutes', '10.0.1.101'),
+  ('b0000000-0000-0000-0000-000000000001', 'Sensor Beta', 'ESP32-C3', 'NF-ESP32-002', 'D4E5F6', 'online', '2.1.0', now() - interval '5 minutes', '10.0.1.102'),
+  ('b0000000-0000-0000-0000-000000000001', 'Camera Unit 1', 'ESP32-CAM', 'NF-ESP32-003', 'G7H8I9', 'offline', '1.8.5', now() - interval '45 minutes', '10.0.1.103'),
+  ('b0000000-0000-0000-0000-000000000001', 'Fleet Monitor 03', 'ESP32-CAM', 'NF-ESP32-004', 'J1K2L3', 'online', '2.3.1', now() - interval '1 minute', '192.168.1.104'),
+  ('b0000000-0000-0000-0000-000000000001', 'Mobile Unit 12', 'ESP32-S3', 'NF-ESP32-005', 'M4N5O6', 'pairing', '1.0.0', NULL, NULL);
 ```
 
 After seeding, the test user credentials are:
 
-- **Email:** `admin@example.com`
+- **Email:** `test@nodefleet.io`
 - **Password:** `test1234`
+
+### Demo Seed Data
+
+The seed SQL creates test data that populates all dashboard pages:
+- 1 admin user (test@nodefleet.io / test1234)
+- 1 organization (Test Organization, Pro plan)
+- 5 devices with various statuses
+- Telemetry, GPS, media, schedules, and commands are seeded separately
+
+To remove all seed data and start fresh:
+```bash
+docker exec -i nodefleet-postgres psql -U nodefleet -d nodefleet -c "DELETE FROM org_members; DELETE FROM organizations; DELETE FROM users;"
+```
 
 ---
 
