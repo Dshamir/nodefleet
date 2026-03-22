@@ -381,6 +381,33 @@ export const deviceCommands = pgTable(
   })
 );
 
+// API Keys
+export const apiKeys = pgTable('api_keys', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  keyHash: varchar('key_hash', { length: 255 }).notNull(),
+  keyPrefix: varchar('key_prefix', { length: 12 }).notNull(), // first 8 chars for display
+  lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  user: one(users, { fields: [apiKeys.userId], references: [users.id] }),
+  organization: one(organizations, { fields: [apiKeys.orgId], references: [organizations.id] }),
+}));
+
+export type ApiKey = InferSelectModel<typeof apiKeys>;
+export type InsertApiKey = InferInsertModel<typeof apiKeys>;
+
 // Auth tables (NextAuth.js compatible)
 export const sessions = pgTable('sessions', {
   sessionToken: varchar('session_token', { length: 255 })
