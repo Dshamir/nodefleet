@@ -1,89 +1,88 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { devices } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { devices, deviceTokens } from "@/lib/db/schema";
+import { eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
+import { v4 as uuidv4 } from "uuid";
 
-const pairDeviceSchema = z.object({
-  pairingCode: z.string().min(1),
+const pairSchema = z.object({
+  pairingCode: z.string().min(1).max(10),
 });
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate request body
     const body = await request.json();
-    const validated = pairDeviceSchema.parse(body);
+    const { pairingCode } = pairSchema.parse(body);
 
-    // Find device with pairing code
-    const device = await db
+    // Find device by pairing code
+    const [device] = await db
       .select()
       .from(devices)
-      .where(eq(devices.pairingCode, validated.pairingCode))
+      .where(eq(devices.pairingCode, pairingCode))
       .limit(1);
 
-    if (!device || device.length === 0) {
-      return NextResponse.json(
-        { error: "Invalid pairing code" },
-        { status: 400 }
-      );
+    if (!device) {
+      return NextResponse.json({ error: "Invalid pairing code" }, { status: 400 });
     }
 
-    const foundDevice = device[0];
-
-    // Check if pairing code has expired
-    if (
-      foundDevice.pairingCodeExpiry &&
-      new Date() > foundDevice.pairingCodeExpiry
-    ) {
-      return NextResponse.json(
-        { error: "Pairing code has expired" },
-        { status: 400 }
-      );
+    // Check expiry
+    if (device.pairingCodeExpiresAt && new Date() > device.pairingCodeExpiresAt) {
+      return NextResponse.json({ error: "Pairing code has expired" }, { status: 400 });
     }
 
-    // Check if device is already paired
-    if (foundDevice.status === "paired") {
-      return NextResponse.json(
-        { error: "Device is already paired" },
-        { status: 400 }
-      );
+    // Check status
+    if (device.status === "online" || device.status === "offline") {
+      return NextResponse.json({ error: "Device is already paired" }, { status: 400 });
     }
 
-    // Generate device JWT token
+    // Generate JWT for the device (365 days)
     const secret = process.env.NEXTAUTH_SECRET;
     if (!secret) {
       throw new Error("NEXTAUTH_SECRET not configured");
     }
 
+    const tokenId = uuidv4();
+    const expiresAt = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+
     const deviceToken = jwt.sign(
       {
-        deviceId: foundDevice.id,
-        orgId: foundDevice.orgId,
+        deviceId: device.id,
+        orgId: device.orgId,
+        tokenId,
         type: "device",
       },
       secret,
       { expiresIn: "365d" }
     );
 
-    // Update device status to paired and clear pairing code
-    const updatedDevice = await db
+    // Store the token
+    await db.insert(deviceTokens).values({
+      deviceId: device.id,
+      token: deviceToken.slice(-64), // Store last 64 chars as identifier
+      issuedAt: new Date(),
+      expiresAt,
+    });
+
+    // Update device to online status
+    await db
       .update(devices)
       .set({
-        status: "paired",
-        pairingCode: null,
-        pairingCodeExpiry: null,
+        status: "online",
         lastHeartbeatAt: new Date(),
-        pairedAt: new Date(),
+        updatedAt: new Date(),
       })
-      .where(eq(devices.id, foundDevice.id))
-      .returning();
+      .where(eq(devices.id, device.id));
 
     return NextResponse.json({
       success: true,
-      deviceId: updatedDevice[0].id,
-      deviceToken,
+      deviceId: device.id,
+      deviceName: device.name,
+      orgId: device.orgId,
+      token: deviceToken,
       expiresIn: "365d",
+      wsUrl: process.env.WS_SERVER_URL || "ws://localhost:8080",
+      message: "Device paired successfully. Use the token to connect via WebSocket.",
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

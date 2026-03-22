@@ -13,19 +13,18 @@ import { v4 as uuidv4 } from "uuid";
 
 const createScheduleSchema = z.object({
   name: z.string().min(1).max(255),
-  description: z.string().max(1000).optional(),
-  items: z
-    .array(
-      z.object({
-        sequence: z.number().min(0),
-        contentType: z.enum(["image", "video", "text", "command"]),
-        contentId: z.string().min(1),
-        duration: z.number().min(1),
-        metadata: z.record(z.any()).optional(),
-      })
-    )
-    .optional(),
-  deviceIds: z.array(z.string()).optional(),
+  description: z.string().max(1000).optional().nullable(),
+  repeatType: z.enum(["once", "daily", "weekly", "monthly", "cron"]).default("once"),
+  cronExpression: z.string().max(255).optional().nullable(),
+  isActive: z.boolean().default(true),
+  conditions: z.record(z.number()).optional().nullable(),
+  items: z.array(z.object({
+    command: z.enum(["capture_photo", "capture_video", "record_audio", "stream_video", "reboot", "update_firmware", "custom"]),
+    commandPayload: z.any().optional(),
+    orderIndex: z.number().min(0).default(0),
+    durationSeconds: z.number().optional().nullable(),
+  })).optional(),
+  deviceIds: z.array(z.string().uuid()).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -35,7 +34,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get organization
     const member = await db
       .select({ orgId: orgMembers.orgId })
       .from(orgMembers)
@@ -46,37 +44,47 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Parse query parameters
+    const orgId = member[0].orgId;
     const url = new URL(request.url);
     const page = parseInt(url.searchParams.get("page") || "1");
-    const limit = parseInt(url.searchParams.get("limit") || "20");
-
+    const limit = parseInt(url.searchParams.get("limit") || "50");
     const offset = (page - 1) * limit;
 
-    // Get total count
-    const totalResult = await db
-      .select({ count: sql<number>`CAST(COUNT(*) as INTEGER)` })
-      .from(schedules)
-      .where(eq(schedules.orgId, member[0].orgId));
-
-    const total = totalResult[0]?.count || 0;
-
     // Get schedules
-    const scheduleList = await db
+    const data = await db
       .select()
       .from(schedules)
-      .where(eq(schedules.orgId, member[0].orgId))
+      .where(eq(schedules.orgId, orgId))
       .orderBy(desc(schedules.createdAt))
       .limit(limit)
       .offset(offset);
 
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schedules)
+      .where(eq(schedules.orgId, orgId));
+
+    // Fetch items and assignments for each schedule
+    const enriched = await Promise.all(
+      data.map(async (schedule) => {
+        const items = await db
+          .select()
+          .from(scheduleItems)
+          .where(eq(scheduleItems.scheduleId, schedule.id));
+        const assignments = await db
+          .select()
+          .from(scheduleAssignments)
+          .where(eq(scheduleAssignments.scheduleId, schedule.id));
+        return { ...schedule, items, assignments };
+      })
+    );
+
     return NextResponse.json({
-      data: scheduleList,
+      data: enriched,
       pagination: {
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit),
+        total: Number(countResult?.count || 0),
       },
     });
   } catch (error) {
@@ -92,7 +100,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get organization
     const member = await db
       .select({ orgId: orgMembers.orgId })
       .from(orgMembers)
@@ -103,53 +110,51 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Validate request body
     const body = await request.json();
     const validated = createScheduleSchema.parse(body);
 
     // Create schedule
-    const newSchedule = await db
+    const scheduleId = uuidv4();
+    const [newSchedule] = await db
       .insert(schedules)
       .values({
-        id: uuidv4(),
+        id: scheduleId,
         orgId: member[0].orgId,
         name: validated.name,
         description: validated.description || null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        repeatType: validated.repeatType,
+        cronExpression: validated.cronExpression || null,
+        isActive: validated.isActive,
+        conditions: validated.conditions || null,
       })
       .returning();
 
-    const scheduleId = newSchedule[0].id;
-
-    // Insert schedule items if provided
+    // Insert items
     if (validated.items && validated.items.length > 0) {
-      const itemsToInsert = validated.items.map((item) => ({
-        id: uuidv4(),
-        scheduleId,
-        sequence: item.sequence,
-        contentType: item.contentType,
-        contentId: item.contentId,
-        duration: item.duration,
-        metadata: item.metadata || {},
-      }));
-
-      await db.insert(scheduleItems).values(itemsToInsert);
+      await db.insert(scheduleItems).values(
+        validated.items.map((item) => ({
+          id: uuidv4(),
+          scheduleId,
+          command: item.command,
+          commandPayload: item.commandPayload || {},
+          orderIndex: item.orderIndex,
+          durationSeconds: item.durationSeconds || null,
+        }))
+      );
     }
 
-    // Insert device assignments if provided
+    // Insert device assignments
     if (validated.deviceIds && validated.deviceIds.length > 0) {
-      const assignmentsToInsert = validated.deviceIds.map((deviceId) => ({
-        id: uuidv4(),
-        scheduleId,
-        deviceId,
-        createdAt: new Date(),
-      }));
-
-      await db.insert(scheduleAssignments).values(assignmentsToInsert);
+      await db.insert(scheduleAssignments).values(
+        validated.deviceIds.map((deviceId) => ({
+          id: uuidv4(),
+          scheduleId,
+          deviceId,
+        }))
+      );
     }
 
-    return NextResponse.json(newSchedule[0], { status: 201 });
+    return NextResponse.json(newSchedule, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });

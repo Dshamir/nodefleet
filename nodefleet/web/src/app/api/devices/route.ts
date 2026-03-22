@@ -2,15 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { devices, organizations, orgMembers } from "@/lib/db/schema";
-import { eq, and, desc, like, ilike, sql } from "drizzle-orm";
+import { devices, orgMembers } from "@/lib/db/schema";
+import { eq, desc, ilike, and, sql } from "drizzle-orm";
 import { generatePairingCode } from "@/lib/utils";
 
 const createDeviceSchema = z.object({
   name: z.string().min(1).max(255),
-  description: z.string().max(1000).optional(),
-  type: z.string().default("generic"),
-  metadata: z.record(z.any()).optional(),
+  hwModel: z.string().min(1).max(255),
+  serialNumber: z.string().min(1).max(255),
+  fleetId: z.string().uuid().optional().nullable(),
+  firmwareVersion: z.string().max(50).optional(),
 });
 
 export async function GET(request: NextRequest) {
@@ -20,7 +21,6 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get organization from orgMembers
     const member = await db
       .select({ orgId: orgMembers.orgId })
       .from(orgMembers)
@@ -28,55 +28,50 @@ export async function GET(request: NextRequest) {
       .limit(1);
 
     if (!member || member.length === 0) {
-      return NextResponse.json({ error: "No organization found" }, { status: 403 });
+      return NextResponse.json({ error: "No organization" }, { status: 403 });
     }
 
     const orgId = member[0].orgId;
-
-    // Parse query parameters
     const url = new URL(request.url);
-    const page = parseInt(url.searchParams.get("page") || "1");
-    const limit = parseInt(url.searchParams.get("limit") || "20");
     const search = url.searchParams.get("search") || "";
     const status = url.searchParams.get("status") || "";
-
+    const fleet = url.searchParams.get("fleet") || "";
+    const page = parseInt(url.searchParams.get("page") || "1");
+    const limit = parseInt(url.searchParams.get("limit") || "50");
     const offset = (page - 1) * limit;
 
-    // Build where clause
-    let whereConditions = [eq(devices.orgId, orgId)];
+    let query = db.select().from(devices).where(eq(devices.orgId, orgId));
 
-    if (search) {
-      whereConditions.push(ilike(devices.name, `%${search}%`));
+    const conditions = [eq(devices.orgId, orgId)];
+    if (search) conditions.push(ilike(devices.name, `%${search}%`));
+    if (status && status !== "all") conditions.push(eq(devices.status, status as any));
+    if (fleet && fleet !== "all") {
+      if (fleet === "none") {
+        conditions.push(sql`${devices.fleetId} IS NULL`);
+      } else {
+        conditions.push(eq(devices.fleetId, fleet));
+      }
     }
 
-    if (status) {
-      whereConditions.push(eq(devices.status, status));
-    }
-
-    // Get total count
-    const totalResult = await db
-      .select({ count: sql<number>`CAST(COUNT(*) as INTEGER)` })
-      .from(devices)
-      .where(and(...whereConditions));
-
-    const total = totalResult[0]?.count || 0;
-
-    // Get devices with pagination
-    const deviceList = await db
+    const data = await db
       .select()
       .from(devices)
-      .where(and(...whereConditions))
+      .where(and(...conditions))
       .orderBy(desc(devices.createdAt))
       .limit(limit)
       .offset(offset);
 
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(devices)
+      .where(and(...conditions));
+
     return NextResponse.json({
-      data: deviceList,
+      data,
       pagination: {
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit),
+        total: Number(countResult?.count || 0),
       },
     });
   } catch (error) {
@@ -92,7 +87,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get organization
     const member = await db
       .select({ orgId: orgMembers.orgId })
       .from(orgMembers)
@@ -104,32 +98,46 @@ export async function POST(request: NextRequest) {
     }
 
     const orgId = member[0].orgId;
-
-    // Validate request body
     const body = await request.json();
     const validated = createDeviceSchema.parse(body);
 
-    // Generate pairing code
-    const pairingCode = generatePairingCode();
-    const pairingCodeExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    // Check serial number uniqueness
+    const existing = await db.select({ id: devices.id }).from(devices)
+      .where(eq(devices.serialNumber, validated.serialNumber)).limit(1);
+    if (existing.length > 0) {
+      return NextResponse.json({ error: "Serial number already exists" }, { status: 409 });
+    }
 
-    // Create device
-    const newDevice = await db
+    // Generate pairing code (6 chars, unique)
+    let pairingCode: string;
+    let attempts = 0;
+    do {
+      pairingCode = generatePairingCode(6);
+      const dup = await db.select({ id: devices.id }).from(devices)
+        .where(eq(devices.pairingCode, pairingCode)).limit(1);
+      if (dup.length === 0) break;
+      attempts++;
+    } while (attempts < 10);
+
+    const [newDevice] = await db
       .insert(devices)
       .values({
         orgId,
         name: validated.name,
-        description: validated.description || null,
-        type: validated.type,
-        status: "unpaired",
+        hwModel: validated.hwModel,
+        serialNumber: validated.serialNumber,
         pairingCode,
-        pairingCodeExpiry,
-        metadata: validated.metadata || {},
-        lastHeartbeatAt: null,
+        pairingCodeExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours
+        status: "pairing",
+        firmwareVersion: validated.firmwareVersion || null,
+        fleetId: validated.fleetId || null,
       })
       .returning();
 
-    return NextResponse.json(newDevice[0], { status: 201 });
+    return NextResponse.json({
+      ...newDevice,
+      message: `Device created. Use pairing code ${pairingCode} on the ESP32 to connect.`,
+    }, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });

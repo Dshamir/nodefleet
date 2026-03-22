@@ -185,10 +185,8 @@ export default function DevicesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: addName.trim(),
-          metadata: {
-            hwModel: addModel.trim(),
-            serialNumber: addSerial.trim(),
-          },
+          hwModel: addModel.trim(),
+          serialNumber: addSerial.trim(),
         }),
       });
       if (!res.ok) {
@@ -304,7 +302,13 @@ export default function DevicesPage() {
             {createdPairingCode ? (
               <div className="space-y-4">
                 <p className="text-sm text-slate-300">
-                  Device created successfully. Use this pairing code on the physical device:
+                  Device created. Flash this pairing code onto your ESP32 firmware, or call the pair API:
+                </p>
+                <code className="block text-xs text-slate-400 bg-slate-950 p-2 rounded mt-2 mb-2 break-all">
+                  POST /api/devices/pair {`{"pairingCode": "${createdPairingCode}"}`}
+                </code>
+                <p className="text-xs text-slate-500">
+                  The device will receive a JWT token valid for 365 days. Code expires in 24 hours.
                 </p>
                 <div className="p-4 bg-slate-900/50 rounded-lg border border-slate-800">
                   <p className="text-sm text-slate-400 mb-2">Pairing Code</p>
