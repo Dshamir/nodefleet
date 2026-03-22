@@ -92,7 +92,7 @@ The seed SQL creates test data that populates all dashboard pages:
 - 1 admin user (test@nodefleet.io / test1234)
 - 1 organization (Test Organization, Pro plan)
 - 5 devices with various statuses
-- Telemetry, GPS, media, schedules, and commands are seeded separately
+- 12 telemetry records, 10 GPS points, 6 media files, 4 schedules with assignments, and 6 command history entries
 
 To remove all seed data and start fresh:
 ```bash
@@ -105,12 +105,17 @@ docker exec -i nodefleet-postgres psql -U nodefleet -d nodefleet -c "DELETE FROM
 
 The Docker Compose configuration remaps default service ports to avoid conflicts with locally running instances:
 
-| Service    | Internal Port | External (Host) Port | Notes                              |
-|------------|---------------|----------------------|------------------------------------|
-| PostgreSQL | 5432          | 5433                 | Avoids conflict with local PostgreSQL |
-| Redis      | 6379          | 6381                 | Avoids conflict with local Redis   |
-| MinIO API  | 9000          | 8081                 | S3-compatible API                  |
-| Web App    | 3000          | 8888                 | Next.js application                |
+| Service        | Host Port | Container Port | Description                        |
+|----------------|-----------|----------------|------------------------------------|
+| Nginx          | 8888      | 80             | HTTP reverse proxy (main entry)    |
+| Nginx HTTPS    | 8443      | 443            | HTTPS                              |
+| Web (Next.js)  | 3002      | 3000           | Web application                    |
+| WebSocket      | 8081      | 8080           | Device real-time comms             |
+| PostgreSQL     | 5433      | 5432           | Database                           |
+| Redis          | 6381      | 6379           | Cache and pub/sub                  |
+| MinIO API      | 9000      | 9000           | Object storage                     |
+| MinIO Console  | 9001      | 9001           | Storage web UI                     |
+| UDP Discovery  | 5555      | 5555           | Device auto-discovery (UDP)        |
 
 To change a port mapping, edit the `ports` section of the relevant service in `docker-compose.yml`. For example, to change the web app from port 8888 to 3000:
 
@@ -165,6 +170,8 @@ docker compose build ws-server
 # Rebuild and restart in one step
 docker compose up -d --build web ws-server
 ```
+
+The ws-server includes built-in device discovery (UDP broadcast on port 5555 and mDNS). See [Device Discovery](DEVICE_DISCOVERY.md) for details.
 
 To rebuild all services:
 

@@ -49,6 +49,7 @@ docker compose up -d
 | Redis          | 6381      | Cache & pub/sub          |
 | MinIO API      | 9000      | Object storage           |
 | MinIO Console  | 9001      | Storage UI               |
+| UDP Discovery  | 5555 (UDP) | Device auto-discovery |
 
 ## Default Test Credentials
 
@@ -90,6 +91,7 @@ nodefleet/
 - **Multi-tenant organizations** -- Organizations with role-based access control (owner, admin, member, viewer) and tiered plans (free, pro, team, enterprise).
 - **Stripe billing** -- Subscription management with per-organization device and storage limits.
 - **JWT device authentication** -- Devices authenticate via a pairing code flow that issues JWT tokens for persistent, secure WebSocket connections.
+- **Device Auto-Discovery** - UDP broadcast and mDNS for zero-config LAN setup
 
 ## Documentation
 
@@ -98,6 +100,7 @@ nodefleet/
 - [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) -- Production deployment guide
 - [docs/USER_GUIDE.md](./docs/USER_GUIDE.md) -- End-user documentation
 - [firmware/esp32_agent/README.md](./firmware/esp32_agent/README.md) -- ESP32 firmware setup and flashing instructions
+- [Device Discovery](docs/DEVICE_DISCOVERY.md) - ESP32 auto-discovery protocols (UDP + mDNS)
 
 ## License
 

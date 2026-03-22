@@ -143,6 +143,16 @@ Edit `config.h` to customize:
 #define DEBUG_LEVEL       2  // 0=off, 1=error, 2=info, 3=verbose
 ```
 
+### Server Auto-Discovery
+
+The NodeFleet server supports automatic discovery on the local network. Instead of hardcoding the server IP, the firmware can discover it automatically:
+
+1. **mDNS**: Resolve `nodefleet.local` using `ESPmDNS.h`
+2. **UDP Broadcast**: Send `NODEFLEET_DISCOVER` to `255.255.255.255:5555` and parse the JSON response
+3. **Fallback**: Use the hardcoded `WS_SERVER_URL` from `config.h`
+
+See the [Device Discovery documentation](../../docs/DEVICE_DISCOVERY.md) for complete implementation code and protocol details.
+
 ## First Boot & Provisioning
 
 ### Step 1: Flash Firmware

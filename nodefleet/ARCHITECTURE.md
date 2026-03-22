@@ -38,7 +38,9 @@ This document describes the system architecture, service topology, data flows, a
                           +-------------------+
                           |   ESP32 Device    |
                           |  (IoT Firmware)   |
-                          +-------------------+
+                          +--------+----------+
+                                   |
+                          WSS :8081 / UDP :5555
 ```
 
 Data flows:
@@ -91,6 +93,16 @@ A standalone Node.js/TypeScript WebSocket server that handles all real-time devi
 - Host port: 8081
 - Internal port: 8080
 - Depends on: redis
+
+### Discovery Service (built into ws-server)
+
+Enables ESP32 devices to find the server on the local network without hardcoded IPs.
+
+- **UDP Broadcast** (port 5555): Listens for `NODEFLEET_DISCOVER` packets, responds with server URLs
+- **mDNS Responder**: Resolves `nodefleet.local` to the server IP via multicast DNS (port 5353)
+- Both protocols are non-fatal and configurable via `ENABLE_DISCOVERY` env var
+
+See [Device Discovery](docs/DEVICE_DISCOVERY.md) for full protocol specification.
 
 ### nginx (Reverse Proxy)
 

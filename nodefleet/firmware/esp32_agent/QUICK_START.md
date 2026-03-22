@@ -54,6 +54,8 @@ Edit **`config.h`** and update:
 #define PAIRING_CODE      "ABC123XYZ"
 ```
 
+**Automatic Server Discovery**: If your server is on the same LAN, the device can find it automatically via UDP broadcast or mDNS (nodefleet.local). See [Device Discovery](../../docs/DEVICE_DISCOVERY.md) for setup.
+
 ## 5. Board Selection
 
 In Arduino IDE:

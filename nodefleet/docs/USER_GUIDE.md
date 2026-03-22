@@ -101,6 +101,14 @@ View your current subscription plan and upgrade to a higher tier.
 3. The server returns a JWT token for the device.
 4. The device uses the JWT to connect via WebSocket for real-time communication.
 
+### Device Auto-Discovery
+
+ESP32 devices can automatically find the NodeFleet server on your local network:
+- **UDP Broadcast**: Device sends "NODEFLEET_DISCOVER" to port 5555, server responds with connection URLs
+- **mDNS**: Device resolves "nodefleet.local" to the server IP
+
+No IP configuration needed on the device — just connect to the same network and the device finds the server automatically. See [Device Discovery](DEVICE_DISCOVERY.md) for firmware integration details.
+
 ### Device Statuses
 
 | Status    | Description                                              |
@@ -208,3 +216,10 @@ https://yourdomain.com/api/webhooks/stripe
 ```
 
 Set the `STRIPE_WEBHOOK_SECRET` environment variable to the signing secret provided by Stripe when creating the webhook endpoint.
+
+---
+
+## Documentation Links
+
+- [Deployment Guide](DEPLOYMENT.md)
+- [Device Discovery](DEVICE_DISCOVERY.md)
