@@ -48,6 +48,14 @@ An interactive Leaflet map with a dark theme for visualizing device locations.
 
 Browse and manage media files uploaded from your devices. The content library features an **inline media viewer** -- images are displayed inline, video and audio files have embedded players, all served via S3 presigned URLs with no downloads required. Click any media item to expand it in a full-size modal viewer.
 
+**3-tier filter hierarchy:**
+
+1. **Device filter (primary)** -- Dropdown to filter by source device. Options: All Devices, No Device, or a specific device name.
+2. **Type filter (secondary)** -- Filter by media type: All Types, Images, Videos, Audio, Documents.
+3. **Search (tertiary)** -- Text search by filename.
+
+Each content card displays the device name it came from, making it easy to identify the source of any file at a glance.
+
 Supported file types:
 
 - Images (displayed inline with thumbnails)

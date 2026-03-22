@@ -89,7 +89,7 @@ nodefleet/
 - **Remote commands** -- Send commands to devices (reboot, firmware update, capture, custom) with full lifecycle tracking (pending, sent, acknowledged, completed, failed, timeout).
 - **Fleet management** -- Group devices by location into fleets (e.g., HQ Office, Warehouse West, Field Ops). Filter and manage devices per fleet.
 - **Full CRUD on all resources** -- Create, read, update, and delete devices, content, and schedules. Device creation returns a pairing code. Content uploads via presigned URLs. Schedules support conditions, active/inactive toggling, and device assignment.
-- **Inline media viewer** -- View images, video, and audio directly in the content library via S3 presigned URLs. Click-to-expand modal for full-size viewing. No downloads needed.
+- **Inline media viewer** -- View images, video, and audio directly in the content library via S3 presigned URLs. Click-to-expand modal for full-size viewing. No downloads needed. Filter content with a 3-tier hierarchy: device, media type, and filename search. Each content card shows the source device name.
 - **Task scheduling** -- Create recurring or one-time schedules with cron expressions and conditional execution (e.g., battery below threshold, temperature above limit). Assign them to devices and automate command execution.
 - **Multi-tenant organizations** -- Organizations with role-based access control (owner, admin, member, viewer) and tiered plans (free, pro, team, enterprise).
 - **Stripe billing** -- Subscription management with per-organization device and storage limits.

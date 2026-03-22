@@ -373,6 +373,16 @@ All content endpoints require session cookie authentication.
 GET /api/content
 ```
 
+**Query Parameters:**
+
+| Parameter | Type   | Default     | Description                                                                 |
+|-----------|--------|-------------|-----------------------------------------------------------------------------|
+| deviceId  | string | -           | Filter by source device ID. Use `none` for files with no associated device. |
+| type      | string | -           | Filter by media type (`image`, `video`, `audio`, `document`).               |
+| search    | string | -           | Search by filename (case-insensitive partial match).                        |
+| page      | number | 1           | Page number.                                                                |
+| limit     | number | 20          | Items per page.                                                             |
+
 **Response (200):**
 
 ```json
@@ -383,6 +393,8 @@ GET /api/content
       "filename": "promo-video.mp4",
       "contentType": "video/mp4",
       "size": 10485760,
+      "deviceId": "clx...",
+      "deviceName": "Lobby Camera",
       "createdAt": "2026-03-21T12:00:00.000Z"
     }
   ],
