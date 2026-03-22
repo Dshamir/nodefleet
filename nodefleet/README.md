@@ -87,10 +87,15 @@ nodefleet/
 - **GPS tracking with Leaflet maps** -- Interactive map views showing device locations, routes, speed, altitude, and satellite count.
 - **Media capture** -- Remote photo, video, and audio capture from ESP32 devices with MinIO-backed storage and presigned URL uploads.
 - **Remote commands** -- Send commands to devices (reboot, firmware update, capture, custom) with full lifecycle tracking (pending, sent, acknowledged, completed, failed, timeout).
-- **Task scheduling** -- Create recurring or one-time schedules with cron expressions, assign them to devices, and automate command execution.
+- **Fleet management** -- Group devices by location into fleets (e.g., HQ Office, Warehouse West, Field Ops). Filter and manage devices per fleet.
+- **Full CRUD on all resources** -- Create, read, update, and delete devices, content, and schedules. Device creation returns a pairing code. Content uploads via presigned URLs. Schedules support conditions, active/inactive toggling, and device assignment.
+- **Inline media viewer** -- View images, video, and audio directly in the content library via S3 presigned URLs. Click-to-expand modal for full-size viewing. No downloads needed.
+- **Task scheduling** -- Create recurring or one-time schedules with cron expressions and conditional execution (e.g., battery below threshold, temperature above limit). Assign them to devices and automate command execution.
 - **Multi-tenant organizations** -- Organizations with role-based access control (owner, admin, member, viewer) and tiered plans (free, pro, team, enterprise).
 - **Stripe billing** -- Subscription management with per-organization device and storage limits.
 - **JWT device authentication** -- Devices authenticate via a pairing code flow that issues JWT tokens for persistent, secure WebSocket connections.
+- **Device detail page** -- Per-device view with real telemetry, GPS, and command history across 4 tabs (Overview, Telemetry, GPS, Commands). Send commands directly from the detail page.
+- **Dashboard stats API** -- Real-time dashboard statistics (total devices, online count, media files, storage used, activity) fetched from the database. Zero hardcoded data across all pages.
 - **Device Auto-Discovery** - UDP broadcast and mDNS for zero-config LAN setup
 
 ## Documentation

@@ -46,9 +46,9 @@ This document describes the system architecture, service topology, data flows, a
 Data flows:
 
 - The **Browser** connects to **Nginx**, which routes HTTP traffic to the **Web App** and WebSocket upgrade requests to the **WS Server**.
-- The **Web App** reads and writes to **PostgreSQL** (primary data), **Redis** (cache and pub/sub), and **MinIO** (object storage for media).
+- The **Web App** reads and writes to **PostgreSQL** (primary data), **Redis** (cache and pub/sub), and **MinIO** (object storage for media). Devices are organized into **fleets** for location-based grouping and filtering.
 - The **WS Server** maintains persistent WebSocket connections with ESP32 devices and uses **Redis** pub/sub to exchange messages with the Web App.
-- **ESP32 Devices** connect to the **WS Server** over WebSocket for telemetry reporting, command reception, and media upload coordination.
+- **ESP32 Devices** connect to the **WS Server** over WebSocket for telemetry reporting, command reception, and media upload coordination. Each device may belong to a fleet for organizational grouping.
 
 ## Service Descriptions
 
@@ -160,7 +160,8 @@ The database is managed with Drizzle ORM. All tables use UUID primary keys with 
 | `users`                | User accounts with email, password hash, name, role (user/admin) |
 | `organizations`        | Multi-tenant organizations with plan, Stripe IDs, device/storage limits |
 | `org_members`          | Join table linking users to organizations with roles (owner/admin/member/viewer) |
-| `devices`              | Registered IoT devices with serial number, pairing code, status, firmware version |
+| `fleets`               | Device grouping by location (id, orgId, name, description, location, latitude, longitude) |
+| `devices`              | Registered IoT devices with serial number, pairing code, status, firmware version, fleet_id |
 | `device_tokens`        | JWT tokens issued to devices with expiration and revocation tracking |
 
 ### Telemetry and Location
@@ -175,7 +176,7 @@ The database is managed with Drizzle ORM. All tables use UUID primary keys with 
 | Table                  | Description                                                |
 |------------------------|------------------------------------------------------------|
 | `media_files`          | Media metadata (type, filename, MIME, size, S3 key/bucket, dimensions) |
-| `schedules`            | Named schedules with cron expressions and repeat types     |
+| `schedules`            | Named schedules with cron expressions, repeat types, active flag, and conditions JSONB (e.g., `{ batteryBelow: 20, tempAbove: 60 }`) |
 | `schedule_items`       | Individual items within a schedule (command + payload + order) |
 | `schedule_assignments` | Many-to-many link between schedules and devices            |
 | `device_commands`      | Command queue with full lifecycle status tracking          |

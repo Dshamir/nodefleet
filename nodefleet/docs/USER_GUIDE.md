@@ -29,11 +29,12 @@ Click **"Sign Out"** in the sidebar to end your session.
 
 ### Devices (/devices)
 
-The main dashboard page. Displays all devices belonging to your organization with their current status. Features include:
+The main dashboard page. Displays all devices belonging to your organization with their current status. All data is fetched from real APIs with zero hardcoded values. Features include:
 
-- Search and filter devices by name, status, or model.
+- Search and filter devices by name, status, model, or fleet.
 - View device details including last heartbeat time, battery level, and connectivity.
-- Add a new device by clicking the "Add Device" button, which opens a pairing code dialog.
+- Full CRUD: Create a device (returns a pairing code), edit device name, and delete with confirmation dialog.
+- Click a device to open the **device detail page** with 4 tabs: Overview, Telemetry, GPS, and Commands. Send commands directly from the detail page.
 
 ### Map (/map)
 
@@ -45,18 +46,24 @@ An interactive Leaflet map with a dark theme for visualizing device locations.
 
 ### Content Library (/content)
 
-Browse media files uploaded from your devices. Supported file types:
+Browse and manage media files uploaded from your devices. The content library features an **inline media viewer** -- images are displayed inline, video and audio files have embedded players, all served via S3 presigned URLs with no downloads required. Click any media item to expand it in a full-size modal viewer.
 
-- Images
-- Video
-- Audio
+Supported file types:
+
+- Images (displayed inline with thumbnails)
+- Video (embedded video player)
+- Audio (embedded audio player)
 - Documents
 
-Files are organized by device and upload date.
+Upload new files directly from the browser via presigned URL to MinIO. Delete files with a confirmation dialog. Files are organized by device and upload date.
 
 ### Schedules (/schedules)
 
-Create and manage automated tasks that run on cron schedules. Supported task types:
+Create and manage automated tasks that run on cron schedules. Full CRUD support: create schedules with device assignments, toggle active/inactive, and delete with confirmation.
+
+**Conditional execution:** Schedules support a `conditions` field that gates task execution. For example, set `batteryBelow: 20` to only run the task when the device battery is below 20%, or `tempAbove: 60` to trigger when CPU temperature exceeds 60 degrees C. Tasks only execute when all specified conditions are met.
+
+Supported task types:
 
 - Capture photo
 - Record audio
@@ -66,7 +73,7 @@ Each schedule is assigned to one or more devices and runs according to the confi
 
 ### Settings (/settings)
 
-Manage your account settings and organization configuration.
+Manage your account settings and organization configuration. Settings are fetched from your real user session data -- no hardcoded values.
 
 ### Billing (/settings/billing)
 
@@ -85,14 +92,45 @@ View your current subscription plan and upgrade to a higher tier.
 
 ---
 
+## Fleet Management
+
+Fleets allow you to group devices by physical location. Each fleet has a name, description, location label, and GPS coordinates (latitude/longitude).
+
+### Creating a Fleet
+
+1. Navigate to the Fleets section.
+2. Click **"Create Fleet"** and enter a name, description, and location.
+3. Optionally set latitude and longitude for map display.
+
+### Assigning Devices to a Fleet
+
+Devices have a `fleet_id` field. When creating or editing a device, select which fleet it belongs to. Filter the device list by fleet to see only devices at a specific location.
+
+### Demo Fleets
+
+The seed data includes 3 demo fleets:
+- **HQ Office** -- San Francisco, CA
+- **Warehouse West** -- Los Angeles, CA
+- **Field Ops** -- Houston, TX
+
+---
+
 ## Device Management
 
 ### Adding a Device
 
 1. Click **"Add Device"** on the Devices page.
 2. Enter the device name, model, and serial number.
-3. A pairing code is generated (6 characters, valid for 24 hours).
+3. A pairing code is generated and displayed (6 characters, valid for 24 hours).
 4. Use this pairing code to connect your physical device.
+
+### Editing a Device
+
+Click on a device to open its detail page. Edit the device name inline and save.
+
+### Deleting a Device
+
+From the device list or detail page, click the delete button. A confirmation dialog appears before the device is permanently removed.
 
 ### Device Pairing
 
@@ -129,6 +167,15 @@ You can send the following commands to a connected device:
 - `reboot` -- Restart the device.
 - `update_firmware` -- Push a firmware update to the device.
 - `custom` -- Send a custom command with an arbitrary payload.
+
+### Device Detail Page
+
+Click any device to open its detail page at `/devices/[id]`. The detail page fetches real telemetry, GPS, and command data from the API. It has 4 tabs:
+
+- **Overview** -- Device info, status, fleet assignment, and latest telemetry snapshot.
+- **Telemetry** -- Historical telemetry charts and records.
+- **GPS** -- Location history with map visualization.
+- **Commands** -- Command history and a **Send Command** button to issue commands directly.
 
 ### Viewing Telemetry
 

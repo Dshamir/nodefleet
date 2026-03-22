@@ -91,7 +91,8 @@ After seeding, the test user credentials are:
 The seed SQL creates test data that populates all dashboard pages:
 - 1 admin user (test@nodefleet.io / test1234)
 - 1 organization (Test Organization, Pro plan)
-- 5 devices with various statuses
+- 3 fleets: HQ Office (San Francisco), Warehouse West (Los Angeles), Field Ops (Houston)
+- 5 devices with various statuses, each assigned to a fleet via `fleet_id`
 - 12 telemetry records, 10 GPS points, 6 media files, 4 schedules with assignments, and 6 command history entries
 
 To remove all seed data and start fresh:

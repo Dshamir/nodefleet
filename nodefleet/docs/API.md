@@ -128,6 +128,7 @@ GET /api/devices
 |-----------|--------|---------|--------------------------------------|
 | search    | string | -       | Filter by name or serial number      |
 | status    | string | -       | Filter by status (ONLINE, OFFLINE, etc.) |
+| fleet     | string | -       | Filter by fleet ID                   |
 | page      | number | 1       | Page number                          |
 | limit     | number | 20      | Items per page                       |
 
@@ -491,6 +492,7 @@ POST /api/schedules
 | description    | string   | No       | Schedule description               |
 | cronExpression | string   | Yes      | Cron expression for timing         |
 | repeatType     | string   | Yes      | ONCE, DAILY, WEEKLY, MONTHLY       |
+| conditions     | object   | No       | Execution conditions JSONB (e.g., `{ "batteryBelow": 20, "tempAbove": 60 }`). Task only executes when all conditions are met. |
 | items          | array    | Yes      | Array of content IDs and durations |
 | deviceIds      | string[] | Yes      | Array of device IDs to assign      |
 
@@ -547,6 +549,106 @@ DELETE /api/schedules/[id]
 ```
 
 **Response (204):** No content.
+
+---
+
+## Fleets
+
+All fleet endpoints require session cookie authentication.
+
+### List Fleets
+
+```
+GET /api/fleets
+```
+
+**Response (200):**
+
+```json
+{
+  "data": [
+    {
+      "id": "clx...",
+      "name": "HQ Office",
+      "description": "Main headquarters",
+      "location": "San Francisco, CA",
+      "latitude": 37.7749,
+      "longitude": -122.4194,
+      "createdAt": "2026-03-21T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+### Create Fleet
+
+```
+POST /api/fleets
+```
+
+**Content-Type:** `application/json`
+
+| Field       | Type   | Required | Description                |
+|-------------|--------|----------|----------------------------|
+| name        | string | Yes      | Fleet name                 |
+| description | string | No       | Fleet description          |
+| location    | string | No       | Human-readable location    |
+| latitude    | number | No       | GPS latitude               |
+| longitude   | number | No       | GPS longitude              |
+
+**Response (201):** Created fleet object.
+
+### Get Fleet
+
+```
+GET /api/fleets/[id]
+```
+
+**Response (200):** Fleet object with associated devices.
+
+### Update Fleet
+
+```
+PATCH /api/fleets/[id]
+```
+
+**Content-Type:** `application/json`
+
+Accepts any subset of fleet fields (`name`, `description`, `location`, `latitude`, `longitude`).
+
+**Response (200):** Updated fleet object.
+
+### Delete Fleet
+
+```
+DELETE /api/fleets/[id]
+```
+
+**Response (204):** No content.
+
+---
+
+## Dashboard
+
+### Get Dashboard Stats
+
+```
+GET /api/dashboard/stats
+```
+
+Returns real-time aggregate statistics from the database.
+
+**Response (200):**
+
+```json
+{
+  "totalDevices": 5,
+  "onlineDevices": 3,
+  "mediaFiles": 6,
+  "storageUsed": 52428800,
+  "activity": 12
+}
+```
 
 ---
 
