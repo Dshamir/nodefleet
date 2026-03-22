@@ -78,6 +78,24 @@ export const deviceCommandStatusEnum = pgEnum('device_command_status', [
 
 // Tables
 
+export const fleets = pgTable('fleets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id')
+    .notNull()
+    .references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  location: varchar('location', { length: 500 }),
+  latitude: doublePrecision('latitude'),
+  longitude: doublePrecision('longitude'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: varchar('email', { length: 255 }).notNull().unique(),
@@ -144,6 +162,7 @@ export const devices = pgTable(
     orgId: uuid('org_id')
       .notNull()
       .references(() => organizations.id, { onDelete: 'cascade' }),
+    fleetId: uuid('fleet_id').references(() => fleets.id, { onDelete: 'set null' }),
     name: varchar('name', { length: 255 }).notNull(),
     hwModel: varchar('hw_model', { length: 255 }).notNull(),
     serialNumber: varchar('serial_number', { length: 255 }).notNull().unique(),
@@ -294,6 +313,7 @@ export const schedules = pgTable('schedules', {
   startAt: timestamp('start_at', { withTimezone: true }),
   endAt: timestamp('end_at', { withTimezone: true }),
   repeatType: repeatTypeEnum('repeat_type').notNull().default('once'),
+  conditions: jsonb('conditions'), // e.g. { batteryBelow: 20, signalAbove: -70, tempAbove: 60 }
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -420,6 +440,14 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   accounts: many(accounts),
 }));
 
+export const fleetsRelations = relations(fleets, ({ many, one }) => ({
+  organization: one(organizations, {
+    fields: [fleets.orgId],
+    references: [organizations.id],
+  }),
+  devices: many(devices),
+}));
+
 export const organizationsRelations = relations(
   organizations,
   ({ many, one }) => ({
@@ -428,6 +456,7 @@ export const organizationsRelations = relations(
       references: [users.id],
     }),
     members: many(orgMembers),
+    fleets: many(fleets),
     devices: many(devices),
     mediaFiles: many(mediaFiles),
     schedules: many(schedules),
@@ -449,6 +478,10 @@ export const devicesRelations = relations(devices, ({ many, one }) => ({
   organization: one(organizations, {
     fields: [devices.orgId],
     references: [organizations.id],
+  }),
+  fleet: one(fleets, {
+    fields: [devices.fleetId],
+    references: [fleets.id],
   }),
   tokens: many(deviceTokens),
   telemetryRecords: many(telemetryRecords),
@@ -559,6 +592,9 @@ export const accountsRelations = relations(accounts, ({ one }) => ({
 }));
 
 // Type exports
+export type Fleet = InferSelectModel<typeof fleets>;
+export type InsertFleet = InferInsertModel<typeof fleets>;
+
 export type User = InferSelectModel<typeof users>;
 export type InsertUser = InferInsertModel<typeof users>;
 

@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -20,147 +23,353 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
 import {
-  Activity,
+  ArrowLeft,
+  Send,
+  Loader2,
   Battery,
   Signal,
   Thermometer,
-  Zap,
-  Send,
-  Download,
+  Cpu,
 } from "lucide-react";
 
-export default function DeviceDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface Device {
+  id: string;
+  name: string;
+  hwModel: string;
+  serialNumber: string;
+  status: "online" | "offline" | "pairing" | "disabled";
+  firmwareVersion: string | null;
+  lastHeartbeatAt: string | null;
+  lastIp: string | null;
+  fleetId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+interface TelemetryRecord {
+  id: string;
+  timestamp: string;
+  batteryLevel: number | null;
+  signalStrength: number | null;
+  cpuTemp: number | null;
+  freeMemory: number | null;
+  uptimeSeconds: number | null;
+}
+
+interface GpsRecord {
+  id: string;
+  timestamp: string;
+  latitude: number;
+  longitude: number;
+  altitude: number | null;
+  speed: number | null;
+  accuracy: number | null;
+}
+
+interface CommandRecord {
+  id: string;
+  command: string;
+  status: string;
+  createdAt: string;
+  payload: Record<string, unknown> | null;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatRelativeTime(dateString: string | null): string {
+  if (!dateString) return "N/A";
+  const now = Date.now();
+  const then = new Date(dateString).getTime();
+  if (isNaN(then)) return "N/A";
+  const diffMs = now - then;
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return seconds <= 1 ? "just now" : `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes === 1 ? "1 min ago" : `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? "1 hr ago" : `${hours} hrs ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
+function formatTimestamp(dateString: string): string {
+  try {
+    const d = new Date(dateString);
+    return d.toLocaleString();
+  } catch {
+    return dateString;
+  }
+}
+
+function formatUptime(seconds: number | null): string {
+  if (seconds == null) return "--";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export default function DeviceDetailPage() {
+  const params = useParams();
+  const deviceId = params.id as string;
+
+  // State
+  const [device, setDevice] = useState<Device | null>(null);
+  const [telemetry, setTelemetry] = useState<TelemetryRecord[]>([]);
+  const [gps, setGps] = useState<GpsRecord[]>([]);
+  const [commands, setCommands] = useState<CommandRecord[]>([]);
+
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Command form
   const [commandType, setCommandType] = useState("capture_photo");
-  const [customCommand, setCustomCommand] = useState("");
+  const [customPayload, setCustomPayload] = useState("");
+  const [sendingCommand, setSendingCommand] = useState(false);
+  const [commandError, setCommandError] = useState<string | null>(null);
+  const [commandSuccess, setCommandSuccess] = useState<string | null>(null);
 
-  const deviceId = params.id;
+  // ------ Fetch data ------
 
-  // Mock device data
-  const device = {
-    id: deviceId,
-    name: "GPS Camera 01",
-    status: "online" as const,
-    model: "ESP32-CAM",
-    serialNumber: "SN-2024-00001",
-    lastSeen: "2 minutes ago",
-    firmware: "v2.3.1",
-    battery: 87,
-    signal: -45,
-    cpuTemp: 42,
-    memory: 78,
-  };
+  const fetchDevice = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/devices/${deviceId}`);
+      if (!res.ok) throw new Error(`Failed to load device (${res.status})`);
+      const json = await res.json();
+      setDevice(json.device);
+      // The detail endpoint returns recent telemetry & GPS inline
+      if (json.recentTelemetry) setTelemetry(json.recentTelemetry);
+      if (json.recentGps) setGps(json.recentGps);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load device");
+    } finally {
+      setLoading(false);
+    }
+  }, [deviceId]);
 
-  const telemetry = [
-    { timestamp: "14:32:15", battery: 87, signal: -45, temp: 42 },
-    { timestamp: "14:28:42", battery: 88, signal: -43, temp: 41 },
-    { timestamp: "14:25:09", battery: 89, signal: -46, temp: 40 },
-    { timestamp: "14:21:30", battery: 90, signal: -44, temp: 41 },
-  ];
+  const fetchTelemetry = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/telemetry?limit=20`);
+      if (!res.ok) return;
+      const json = await res.json();
+      setTelemetry(json.data || []);
+    } catch {
+      // non-critical
+    }
+  }, [deviceId]);
 
-  const gpsTrail = [
-    { timestamp: "14:35:22", latitude: "37.7749", longitude: "-122.4194" },
-    { timestamp: "14:32:15", latitude: "37.7745", longitude: "-122.4185" },
-    { timestamp: "14:28:42", latitude: "37.7738", longitude: "-122.4195" },
-    { timestamp: "14:25:09", latitude: "37.7741", longitude: "-122.4210" },
-  ];
+  const fetchGps = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/gps?limit=20`);
+      if (!res.ok) return;
+      const json = await res.json();
+      setGps(json.data || []);
+    } catch {
+      // non-critical
+    }
+  }, [deviceId]);
 
-  const media = [
-    { id: 1, name: "photo_001.jpg", type: "image", size: "2.4 MB", date: "2024-01-15 14:32" },
-    { id: 2, name: "photo_002.jpg", type: "image", size: "2.1 MB", date: "2024-01-15 14:28" },
-    { id: 3, name: "video_001.mp4", type: "video", size: "45.2 MB", date: "2024-01-15 14:20" },
-    { id: 4, name: "audio_001.wav", type: "audio", size: "1.8 MB", date: "2024-01-15 14:15" },
-  ];
+  useEffect(() => {
+    fetchDevice().then(() => {
+      // After initial load, fetch extended telemetry & GPS
+      fetchTelemetry();
+      fetchGps();
+    });
+  }, [fetchDevice, fetchTelemetry, fetchGps]);
 
-  const commandHistory = [
-    { id: 1, command: "capture_photo", status: "success", timestamp: "14:35:22" },
-    { id: 2, command: "record_audio", status: "success", timestamp: "14:32:15" },
-    { id: 3, command: "reboot", status: "success", timestamp: "14:28:42" },
-    { id: 4, command: "capture_video", status: "failed", timestamp: "14:25:09" },
-  ];
+  // ------ Send Command ------
+
+  async function handleSendCommand() {
+    setSendingCommand(true);
+    setCommandError(null);
+    setCommandSuccess(null);
+    try {
+      const payload: Record<string, unknown> = {};
+      if (commandType === "custom" && customPayload.trim()) {
+        try {
+          Object.assign(payload, JSON.parse(customPayload));
+        } catch {
+          payload.raw = customPayload.trim();
+        }
+      }
+
+      const res = await fetch(`/api/devices/${deviceId}/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ command: commandType, payload }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Error ${res.status}`);
+      }
+
+      const result = await res.json();
+      setCommandSuccess(`Command sent (ID: ${result.id})`);
+      // Add to local history
+      setCommands((prev) => [
+        {
+          id: result.id,
+          command: result.command,
+          status: result.status || "pending",
+          createdAt: new Date().toISOString(),
+          payload: result.payload || null,
+        },
+        ...prev,
+      ]);
+      setTimeout(() => setCommandSuccess(null), 4000);
+    } catch (err) {
+      setCommandError(err instanceof Error ? err.message : "Failed to send command");
+    } finally {
+      setSendingCommand(false);
+    }
+  }
+
+  // ------ Latest telemetry values for gauge cards ------
+  const latest = telemetry.length > 0 ? telemetry[0] : null;
+
+  // ------ Render ------
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-[400px]">
+        <div className="flex items-center gap-3 text-slate-400">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          Loading device...
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !device) {
+    return (
+      <div className="p-6 space-y-4">
+        <Link
+          href="/devices"
+          className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Devices
+        </Link>
+        <Card className="bg-slate-900/50 border-slate-800">
+          <CardContent className="py-12 text-center">
+            <p className="text-red-400">{error || "Device not found"}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6">
-      {/* Page Header */}
+      {/* Back link & Header */}
+      <Link
+        href="/devices"
+        className="inline-flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to Devices
+      </Link>
+
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">{device.name}</h1>
           <div className="flex items-center gap-4 text-sm text-slate-400">
-            <span>Model: {device.model}</span>
+            <span>Model: {device.hwModel}</span>
             <span>SN: {device.serialNumber}</span>
             <DeviceStatusBadge status={device.status} />
           </div>
         </div>
       </div>
 
-      {/* Telemetry Gauges */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm">Battery</p>
-                <p className="text-2xl font-bold text-white">{device.battery}%</p>
+      {/* Live gauge cards */}
+      {latest && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-400 text-sm">Battery</p>
+                  <p className="text-2xl font-bold text-white">
+                    {latest.batteryLevel != null ? `${latest.batteryLevel}%` : "--"}
+                  </p>
+                </div>
+                <Battery className="w-8 h-8 text-primary" />
               </div>
-              <Battery className="w-8 h-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm">Signal</p>
-                <p className="text-2xl font-bold text-white">{device.signal} dBm</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-400 text-sm">Signal</p>
+                  <p className="text-2xl font-bold text-white">
+                    {latest.signalStrength != null
+                      ? `${latest.signalStrength} dBm`
+                      : "--"}
+                  </p>
+                </div>
+                <Signal className="w-8 h-8 text-primary" />
               </div>
-              <Signal className="w-8 h-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm">CPU Temp</p>
-                <p className="text-2xl font-bold text-white">{device.cpuTemp}°C</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-400 text-sm">CPU Temp</p>
+                  <p className="text-2xl font-bold text-white">
+                    {latest.cpuTemp != null ? `${latest.cpuTemp.toFixed(1)} C` : "--"}
+                  </p>
+                </div>
+                <Thermometer className="w-8 h-8 text-warning" />
               </div>
-              <Thermometer className="w-8 h-8 text-warning" />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-slate-900/50 border-slate-800">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-slate-400 text-sm">Memory</p>
-                <p className="text-2xl font-bold text-white">{device.memory}%</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-slate-400 text-sm">Free Memory</p>
+                  <p className="text-2xl font-bold text-white">
+                    {latest.freeMemory != null
+                      ? `${(latest.freeMemory / 1024).toFixed(0)} KB`
+                      : "--"}
+                  </p>
+                </div>
+                <Cpu className="w-8 h-8 text-primary" />
               </div>
-              <Zap className="w-8 h-8 text-primary" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="bg-slate-900/50 border border-slate-800">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="gps">GPS Trail</TabsTrigger>
-          <TabsTrigger value="media">Media</TabsTrigger>
-          <TabsTrigger value="commands">Commands</TabsTrigger>
           <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
+          <TabsTrigger value="gps">GPS</TabsTrigger>
+          <TabsTrigger value="commands">Commands</TabsTrigger>
         </TabsList>
 
-        {/* Overview Tab */}
+        {/* ---- Overview Tab ---- */}
         <TabsContent value="overview" className="space-y-6 mt-6">
           <Card className="bg-slate-900/50 border-slate-800">
             <CardHeader>
@@ -168,98 +377,145 @@ export default function DeviceDetailPage({
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <InfoField label="Device Name" value={device.name} />
+                <InfoField label="Hardware Model" value={device.hwModel} />
+                <InfoField label="Serial Number" value={device.serialNumber} />
                 <div>
                   <p className="text-sm text-slate-400 mb-1">Status</p>
                   <DeviceStatusBadge status={device.status} />
                 </div>
-                <div>
-                  <p className="text-sm text-slate-400 mb-1">Last Seen</p>
-                  <p className="text-white font-medium">{device.lastSeen}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-400 mb-1">Firmware Version</p>
-                  <p className="text-white font-medium">{device.firmware}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-slate-400 mb-1">Serial Number</p>
-                  <p className="text-white font-medium">{device.serialNumber}</p>
-                </div>
+                <InfoField
+                  label="Firmware Version"
+                  value={device.firmwareVersion || "N/A"}
+                />
+                <InfoField label="Fleet ID" value={device.fleetId || "None"} />
+                <InfoField
+                  label="Last Heartbeat"
+                  value={formatRelativeTime(device.lastHeartbeatAt)}
+                />
+                <InfoField label="Last IP" value={device.lastIp || "N/A"} />
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* GPS Trail Tab */}
+        {/* ---- Telemetry Tab ---- */}
+        <TabsContent value="telemetry" className="space-y-6 mt-6">
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardHeader>
+              <CardTitle>Telemetry History</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {telemetry.length === 0 ? (
+                <p className="text-slate-400 text-center py-8">
+                  No telemetry data available
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>Battery</TableHead>
+                        <TableHead>Signal</TableHead>
+                        <TableHead>CPU Temp</TableHead>
+                        <TableHead>Free Memory</TableHead>
+                        <TableHead>Uptime</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {telemetry.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="text-sm text-slate-300">
+                            {formatTimestamp(r.timestamp)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.batteryLevel != null ? `${r.batteryLevel}%` : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.signalStrength != null
+                              ? `${r.signalStrength} dBm`
+                              : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.cpuTemp != null ? `${r.cpuTemp.toFixed(1)} C` : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.freeMemory != null
+                              ? `${(r.freeMemory / 1024).toFixed(0)} KB`
+                              : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {formatUptime(r.uptimeSeconds)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ---- GPS Tab ---- */}
         <TabsContent value="gps" className="space-y-6 mt-6">
           <Card className="bg-slate-900/50 border-slate-800">
             <CardHeader>
-              <CardTitle>GPS Trail History</CardTitle>
+              <CardTitle>GPS Trail</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>Latitude</TableHead>
-                      <TableHead>Longitude</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {gpsTrail.map((entry) => (
-                      <TableRow key={entry.timestamp}>
-                        <TableCell className="text-sm">{entry.timestamp}</TableCell>
-                        <TableCell className="text-sm">{entry.latitude}</TableCell>
-                        <TableCell className="text-sm">{entry.longitude}</TableCell>
+              {gps.length === 0 ? (
+                <p className="text-slate-400 text-center py-8">
+                  No GPS data available
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Timestamp</TableHead>
+                        <TableHead>Latitude</TableHead>
+                        <TableHead>Longitude</TableHead>
+                        <TableHead>Altitude</TableHead>
+                        <TableHead>Speed</TableHead>
+                        <TableHead>Accuracy</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-              <p className="text-xs text-slate-500 mt-4">
-                Map integration requires Leaflet or Mapbox integration
-              </p>
+                    </TableHeader>
+                    <TableBody>
+                      {gps.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell className="text-sm text-slate-300">
+                            {formatTimestamp(r.timestamp)}
+                          </TableCell>
+                          <TableCell className="text-sm font-mono">
+                            {r.latitude.toFixed(6)}
+                          </TableCell>
+                          <TableCell className="text-sm font-mono">
+                            {r.longitude.toFixed(6)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.altitude != null ? `${r.altitude.toFixed(1)} m` : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.speed != null ? `${r.speed.toFixed(1)} m/s` : "--"}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {r.accuracy != null ? `${r.accuracy.toFixed(1)} m` : "--"}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Media Tab */}
-        <TabsContent value="media" className="space-y-6 mt-6">
-          <Card className="bg-slate-900/50 border-slate-800">
-            <CardHeader>
-              <CardTitle>Captured Media</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {media.map((file) => (
-                  <div
-                    key={file.id}
-                    className="p-4 bg-slate-900/30 rounded-lg border border-slate-800 hover:border-primary/50 transition-colors"
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div className="flex-1">
-                        <p className="font-medium text-white mb-1">{file.name}</p>
-                        <div className="flex items-center gap-2">
-                          <Badge variant="secondary" className="text-xs">
-                            {file.type}
-                          </Badge>
-                          <span className="text-xs text-slate-400">{file.size}</span>
-                        </div>
-                      </div>
-                      <Button size="icon" variant="ghost">
-                        <Download className="w-4 h-4" />
-                      </Button>
-                    </div>
-                    <p className="text-xs text-slate-500">{file.date}</p>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Commands Tab */}
+        {/* ---- Commands Tab ---- */}
         <TabsContent value="commands" className="space-y-6 mt-6">
+          {/* Send Command */}
           <Card className="bg-slate-900/50 border-slate-800">
             <CardHeader>
               <CardTitle>Send Command</CardTitle>
@@ -279,7 +535,6 @@ export default function DeviceDetailPage({
                       <SelectItem value="capture_video">Capture Video</SelectItem>
                       <SelectItem value="record_audio">Record Audio</SelectItem>
                       <SelectItem value="reboot">Reboot Device</SelectItem>
-                      <SelectItem value="update_firmware">Update Firmware</SelectItem>
                       <SelectItem value="custom">Custom Command</SelectItem>
                     </SelectContent>
                   </Select>
@@ -288,98 +543,105 @@ export default function DeviceDetailPage({
                 {commandType === "custom" && (
                   <div>
                     <label className="block text-sm font-medium text-slate-300 mb-2">
-                      Command
+                      Payload (JSON or text)
                     </label>
                     <Input
-                      placeholder="Enter custom command"
-                      value={customCommand}
-                      onChange={(e) => setCustomCommand(e.target.value)}
+                      placeholder='e.g. {"action": "diagnostics"}'
+                      value={customPayload}
+                      onChange={(e) => setCustomPayload(e.target.value)}
                       className="bg-slate-800 border-slate-700"
                     />
                   </div>
                 )}
 
-                <Button className="w-full bg-primary hover:bg-primary-dark gap-2">
-                  <Send className="w-4 h-4" />
+                {commandError && (
+                  <p className="text-sm text-red-400">{commandError}</p>
+                )}
+                {commandSuccess && (
+                  <p className="text-sm text-green-400">{commandSuccess}</p>
+                )}
+
+                <Button
+                  className="w-full bg-primary hover:bg-primary-dark gap-2"
+                  onClick={handleSendCommand}
+                  disabled={sendingCommand}
+                >
+                  {sendingCommand ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
                   Send Command
                 </Button>
               </div>
             </CardContent>
           </Card>
 
+          {/* Command History */}
           <Card className="bg-slate-900/50 border-slate-800">
             <CardHeader>
               <CardTitle>Command History</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Command</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Timestamp</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {commandHistory.map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell className="text-sm">{entry.command}</TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={entry.status === "success" ? "success" : "destructive"}
-                          >
-                            {entry.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-sm text-slate-400">
-                          {entry.timestamp}
-                        </TableCell>
+              {commands.length === 0 ? (
+                <p className="text-slate-400 text-center py-8">
+                  No commands sent yet
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Command</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Sent At</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Telemetry Tab */}
-        <TabsContent value="telemetry" className="space-y-6 mt-6">
-          <Card className="bg-slate-900/50 border-slate-800">
-            <CardHeader>
-              <CardTitle>Telemetry Data</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-slate-400 mb-4">
-                Recharts integration required for live charts. Showing raw telemetry data:
-              </p>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Timestamp</TableHead>
-                      <TableHead>Battery %</TableHead>
-                      <TableHead>Signal dBm</TableHead>
-                      <TableHead>Temp °C</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {telemetry.map((entry) => (
-                      <TableRow key={entry.timestamp}>
-                        <TableCell className="text-sm">{entry.timestamp}</TableCell>
-                        <TableCell className="text-sm">{entry.battery}%</TableCell>
-                        <TableCell className="text-sm">{entry.signal} dBm</TableCell>
-                        <TableCell className="text-sm">{entry.temp}°C</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {commands.map((c) => (
+                        <TableRow key={c.id}>
+                          <TableCell className="text-sm font-mono">
+                            {c.command}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              className={
+                                c.status === "completed"
+                                  ? "bg-success/20 text-success border-success/30"
+                                  : c.status === "failed"
+                                  ? "bg-red-500/20 text-red-400 border-red-500/30"
+                                  : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30"
+                              }
+                            >
+                              {c.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-sm text-slate-400">
+                            {formatTimestamp(c.createdAt)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Small helper component
+// ---------------------------------------------------------------------------
+
+function InfoField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-sm text-slate-400 mb-1">{label}</p>
+      <p className="text-white font-medium">{value}</p>
     </div>
   );
 }

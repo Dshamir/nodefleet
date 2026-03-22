@@ -1,103 +1,154 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { StatsCard } from "@/components/dashboard/stats-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Activity,
   MapPin,
   FileText,
   HardDrive,
-  Plus,
-  Upload,
-  Clock,
+  Loader2,
+  Wifi,
+  Server,
 } from "lucide-react";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
+
+interface DashboardStats {
+  totalDevices: number;
+  onlineDevices: number;
+  mediaFiles: number;
+  storageUsed: string;
+}
+
+interface ActivityItem {
+  id: string;
+  device: string;
+  action: string;
+  time: string;
+  status: "success" | "warning" | "error";
+}
+
+interface Fleet {
+  id: string;
+  name: string;
+  location: string;
+  deviceCount: number;
+}
+
+function formatStorageUsed(bytes: number): string {
+  if (typeof bytes !== "number") return String(bytes);
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  const value = bytes / Math.pow(1024, i);
+  return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
 
 export default function DashboardPage() {
-  // Mock data
-  const stats = [
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [activity, setActivity] = useState<ActivityItem[]>([]);
+  const [fleets, setFleets] = useState<Fleet[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function fetchDashboard() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const [statsRes, fleetsRes] = await Promise.allSettled([
+          fetch("/api/dashboard/stats"),
+          fetch("/api/fleets"),
+        ]);
+
+        // Process stats response
+        if (statsRes.status === "fulfilled" && statsRes.value.ok) {
+          const data = await statsRes.value.json();
+          setStats(data.stats || {
+            totalDevices: 0,
+            onlineDevices: 0,
+            mediaFiles: 0,
+            storageUsed: "0 B",
+          });
+          setActivity(data.activity || []);
+        } else {
+          setStats({
+            totalDevices: 0,
+            onlineDevices: 0,
+            mediaFiles: 0,
+            storageUsed: "0 B",
+          });
+        }
+
+        // Process fleets response
+        if (fleetsRes.status === "fulfilled" && fleetsRes.value.ok) {
+          const data = await fleetsRes.value.json();
+          setFleets(data.data || data.fleets || data || []);
+        }
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "Failed to load dashboard";
+        setError(message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchDashboard();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <span className="ml-3 text-slate-400">Loading dashboard...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <Card className="bg-red-900/20 border-red-800">
+          <CardContent className="pt-6 text-center">
+            <p className="text-red-400">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const storageDisplay =
+    typeof stats?.storageUsed === "number"
+      ? formatStorageUsed(stats.storageUsed as unknown as number)
+      : stats?.storageUsed || "0 B";
+
+  const statCards = [
     {
       title: "Total Devices",
-      value: "24",
+      value: String(stats?.totalDevices ?? 0),
       icon: Activity,
-      trend: { value: 8, isPositive: true },
       color: "primary" as const,
     },
     {
       title: "Online Now",
-      value: "18",
-      icon: Activity,
-      trend: { value: 2, isPositive: true },
+      value: String(stats?.onlineDevices ?? 0),
+      icon: Wifi,
       color: "success" as const,
     },
     {
       title: "Media Files",
-      value: "1,234",
+      value: String(stats?.mediaFiles ?? 0),
       icon: FileText,
-      trend: { value: 45, isPositive: true },
       color: "warning" as const,
     },
     {
       title: "Storage Used",
-      value: "45.2 GB",
+      value: storageDisplay,
       icon: HardDrive,
-      trend: { value: 12, isPositive: false },
       color: "primary" as const,
     },
-  ];
-
-  const recentActivity = [
-    {
-      id: 1,
-      device: "GPS Camera 01",
-      action: "Captured photo",
-      time: "2 minutes ago",
-      status: "success" as const,
-    },
-    {
-      id: 2,
-      device: "Sensor Unit 15",
-      action: "Telemetry update",
-      time: "5 minutes ago",
-      status: "success" as const,
-    },
-    {
-      id: 3,
-      device: "Audio Logger 08",
-      action: "Recording completed",
-      time: "12 minutes ago",
-      status: "success" as const,
-    },
-    {
-      id: 4,
-      device: "Fleet Monitor 03",
-      action: "GPS location update",
-      time: "18 minutes ago",
-      status: "success" as const,
-    },
-    {
-      id: 5,
-      device: "Mobile Unit 12",
-      action: "Battery low warning",
-      time: "25 minutes ago",
-      status: "warning" as const,
-    },
-  ];
-
-  const gpsPositions = [
-    { device: "GPS Camera 01", lat: "37.7749", lng: "-122.4194", lastUpdate: "2 min ago" },
-    { device: "Sensor Unit 15", lat: "34.0522", lng: "-118.2437", lastUpdate: "5 min ago" },
-    { device: "Audio Logger 08", lat: "41.8781", lng: "-87.6298", lastUpdate: "12 min ago" },
   ];
 
   return (
@@ -105,102 +156,112 @@ export default function DashboardPage() {
       {/* Page Header */}
       <div>
         <h1 className="text-3xl font-bold text-white mb-2">Dashboard</h1>
-        <p className="text-slate-400">Welcome back. Here's your fleet overview.</p>
+        <p className="text-slate-400">Welcome back. Here is your fleet overview.</p>
       </div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat) => (
+        {statCards.map((stat) => (
           <StatsCard
             key={stat.title}
             title={stat.title}
             value={stat.value}
             icon={stat.icon}
-            trend={stat.trend}
             color={stat.color}
           />
         ))}
       </div>
 
-      {/* Quick Actions */}
-      <Card className="bg-slate-900/50 border-slate-800">
-        <CardHeader>
-          <CardTitle className="text-xl">Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <Button className="bg-primary hover:bg-primary-dark justify-start gap-2">
-              <Plus className="w-4 h-4" />
-              Add Device
-            </Button>
-            <Button variant="outline" className="justify-start gap-2">
-              <Upload className="w-4 h-4" />
-              Upload Content
-            </Button>
-            <Button variant="outline" className="justify-start gap-2">
-              <Clock className="w-4 h-4" />
-              Create Schedule
-            </Button>
+      {/* Fleet Summary */}
+      {fleets.length > 0 && (
+        <div>
+          <h2 className="text-xl font-semibold text-white mb-4">Your Fleets</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {fleets.map((fleet) => (
+              <Card
+                key={fleet.id}
+                className="bg-slate-900/50 border-slate-800 hover:border-primary/50 transition-all"
+              >
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <Server className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <h3 className="font-medium text-white">{fleet.name}</h3>
+                        {fleet.location && (
+                          <p className="text-sm text-slate-400 flex items-center gap-1 mt-1">
+                            <MapPin className="w-3 h-3" />
+                            {fleet.location}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 mt-3">
+                    <Badge variant="secondary" className="text-xs">
+                      {fleet.deviceCount ?? 0} device{(fleet.deviceCount ?? 0) !== 1 ? "s" : ""}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recent Activity */}
-        <div className="lg:col-span-2">
-          <Card className="bg-slate-900/50 border-slate-800">
-            <CardHeader>
-              <CardTitle className="text-xl">Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivity.map((activity) => (
-                  <div key={activity.id} className="flex items-center justify-between p-4 bg-slate-900/30 rounded-lg border border-slate-800">
+      {/* Recent Activity */}
+      <div>
+        <Card className="bg-slate-900/50 border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-xl">Recent Activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {activity.length === 0 ? (
+              <div className="text-center py-8">
+                <Activity className="w-10 h-10 mx-auto mb-3 text-slate-600" />
+                <p className="text-slate-400">No recent activity</p>
+                <p className="text-sm text-slate-500 mt-1">
+                  Activity from your devices will appear here
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {activity.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between p-4 bg-slate-900/30 rounded-lg border border-slate-800"
+                  >
                     <div className="flex-1">
-                      <p className="font-medium text-white">{activity.device}</p>
-                      <p className="text-sm text-slate-400">{activity.action}</p>
+                      <p className="font-medium text-white">{item.device}</p>
+                      <p className="text-sm text-slate-400">{item.action}</p>
                     </div>
                     <div className="text-right">
-                      <Badge variant={activity.status === "success" ? "success" : "warning"} className="mb-1">
-                        {activity.status === "success" ? "Success" : "Warning"}
+                      <Badge
+                        variant={
+                          item.status === "success"
+                            ? "success"
+                            : item.status === "warning"
+                            ? "warning"
+                            : "destructive"
+                        }
+                        className="mb-1"
+                      >
+                        {item.status === "success"
+                          ? "Success"
+                          : item.status === "warning"
+                          ? "Warning"
+                          : "Error"}
                       </Badge>
-                      <p className="text-xs text-slate-500">{activity.time}</p>
+                      <p className="text-xs text-slate-500">{item.time}</p>
                     </div>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* GPS Positions */}
-        <div>
-          <Card className="bg-slate-900/50 border-slate-800">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <MapPin className="w-5 h-5 text-primary" />
-                Last GPS Positions
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {gpsPositions.map((pos) => (
-                  <div key={pos.device} className="p-3 bg-slate-900/30 rounded-lg border border-slate-800">
-                    <p className="text-sm font-medium text-white mb-2">{pos.device}</p>
-                    <div className="text-xs text-slate-400 space-y-1">
-                      <p>Lat: {pos.lat}</p>
-                      <p>Lng: {pos.lng}</p>
-                      <p className="text-primary pt-1">{pos.lastUpdate}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <Button variant="outline" className="w-full mt-4">
-                View Map
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
