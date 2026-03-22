@@ -44,6 +44,11 @@ interface ContentItem {
   uploadedAt: string;
 }
 
+interface DeviceInfo {
+  id: string;
+  name: string;
+}
+
 interface PresignedUrls {
   [id: string]: string;
 }
@@ -97,9 +102,11 @@ const typeLabels: Record<string, string> = {
 };
 
 export default function ContentLibraryPage() {
+  const [deviceFilter, setDeviceFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [contentItems, setContentItems] = useState<ContentItem[]>([]);
+  const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [presignedUrls, setPresignedUrls] = useState<PresignedUrls>({});
@@ -151,9 +158,19 @@ export default function ContentLibraryPage() {
     setPresignedUrls(urls);
   }
 
+  const fetchDevices = useCallback(async () => {
+    try {
+      const res = await fetch("/api/devices?limit=100");
+      if (!res.ok) return;
+      const data = await res.json();
+      setDevices((data.data || []).map((d: DeviceInfo) => ({ id: d.id, name: d.name })));
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchContent();
-  }, [fetchContent]);
+    fetchDevices();
+  }, [fetchContent, fetchDevices]);
 
   const handleUpload = async (file: globalThis.File) => {
     try {
@@ -226,14 +243,22 @@ export default function ContentLibraryPage() {
     }
   };
 
+  const deviceMap = new Map(devices.map((d) => [d.id, d.name]));
+
   const filteredItems = contentItems.filter((item) => {
+    // Primary filter: device
+    const matchesDevice =
+      deviceFilter === "all" ||
+      (deviceFilter === "none" ? !item.deviceId : item.deviceId === deviceFilter);
+    // Secondary filter: type
     const itemType = deriveType(item.mimeType);
     const matchesType = typeFilter === "all" || itemType === typeFilter;
+    // Tertiary: search
     const matchesSearch =
       search === "" ||
       item.filename.toLowerCase().includes(search.toLowerCase()) ||
       item.originalFilename.toLowerCase().includes(search.toLowerCase());
-    return matchesType && matchesSearch;
+    return matchesDevice && matchesType && matchesSearch;
   });
 
   const renderThumbnail = (item: ContentItem) => {
@@ -356,21 +381,24 @@ export default function ContentLibraryPage() {
         </Button>
       </div>
 
-      {/* Search and Filter Bar */}
+      {/* Filter Bar: Device (primary) > Type (secondary) > Search */}
       <Card className="bg-slate-900/50 border-slate-800">
         <CardContent className="pt-6">
           <div className="flex items-center gap-4 flex-col sm:flex-row">
-            <div className="relative flex-1 w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <Input
-                placeholder="Search files..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10 bg-slate-800 border-slate-700"
-              />
-            </div>
+            <Select value={deviceFilter} onValueChange={setDeviceFilter}>
+              <SelectTrigger className="w-52 bg-slate-800 border-slate-700">
+                <SelectValue placeholder="Filter by device" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Devices</SelectItem>
+                <SelectItem value="none">No Device</SelectItem>
+                {devices.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-48 bg-slate-800 border-slate-700">
+              <SelectTrigger className="w-44 bg-slate-800 border-slate-700">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -381,6 +409,15 @@ export default function ContentLibraryPage() {
                 <SelectItem value="document">Documents</SelectItem>
               </SelectContent>
             </Select>
+            <div className="relative flex-1 w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Search files..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10 bg-slate-800 border-slate-700"
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -465,6 +502,11 @@ export default function ContentLibraryPage() {
                       {formatFileSize(item.size)}
                     </span>
                   </div>
+                  {item.deviceId && (
+                    <p className="text-xs text-slate-400 mb-1">
+                      {deviceMap.get(item.deviceId) || "Unknown device"}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-500 mb-3">
                     {formatRelativeTime(item.uploadedAt)}
                   </p>
