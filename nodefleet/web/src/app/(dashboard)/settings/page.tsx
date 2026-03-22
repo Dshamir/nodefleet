@@ -22,6 +22,16 @@ interface SessionUser {
   role: string;
 }
 
+interface OrgInfo {
+  name: string;
+  slug: string;
+  plan: string;
+  deviceLimit: number;
+  orgIdentifier: string;
+  owner: { name: string; email: string };
+  stats: { devices: number; media: number; members: number };
+}
+
 interface ApiKeyItem {
   id: string;
   name: string;
@@ -50,6 +60,12 @@ export default function SettingsPage() {
   const [profileEmail, setProfileEmail] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileMsg, setProfileMsg] = useState<{ text: string; ok: boolean } | null>(null);
+
+  // Organization
+  const [org, setOrg] = useState<OrgInfo | null>(null);
+  const [orgName, setOrgName] = useState("");
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [orgMsg, setOrgMsg] = useState<{ text: string; ok: boolean } | null>(null);
 
   // Password
   const [showPwForm, setShowPwForm] = useState(false);
@@ -92,7 +108,17 @@ export default function SettingsPage() {
       } catch {}
       finally { setLoading(false); }
     }
+    async function fetchOrg() {
+      try {
+        const res = await fetch("/api/org");
+        if (!res.ok) return;
+        const data = await res.json();
+        setOrg(data);
+        setOrgName(data.name);
+      } catch {}
+    }
     fetchSession();
+    fetchOrg();
   }, []);
 
   // Fetch API keys
@@ -263,11 +289,72 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Organization ID</label>
-            <Input value={user?.orgId || ""} readOnly className="bg-slate-800 border-slate-700 text-slate-400" />
-          </div>
-          <p className="text-sm text-slate-500">Organization settings managed by the org owner.</p>
+          {org ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Organization Name</label>
+                  {user?.role === "owner" || user?.role === "admin" ? (
+                    <Input value={orgName} onChange={(e) => setOrgName(e.target.value)}
+                      className="bg-slate-800 border-slate-700" />
+                  ) : (
+                    <Input value={org.name} readOnly className="bg-slate-800 border-slate-700 text-slate-400" />
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">Organization ID</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 px-3 py-2 bg-slate-950 rounded border border-slate-700 text-primary font-mono text-sm">
+                      {org.orgIdentifier}
+                    </code>
+                    <Button size="icon" variant="outline" className="h-9 w-9" onClick={() => {
+                      navigator.clipboard.writeText(org.orgIdentifier);
+                    }}>
+                      <Copy className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
+                  <p className="text-2xl font-bold text-white">{org.stats.devices}</p>
+                  <p className="text-xs text-slate-400">Devices</p>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
+                  <p className="text-2xl font-bold text-white">{org.stats.media}</p>
+                  <p className="text-xs text-slate-400">Media Files</p>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
+                  <p className="text-2xl font-bold text-white">{org.stats.members}</p>
+                  <p className="text-xs text-slate-400">Members</p>
+                </div>
+                <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 text-center">
+                  <p className="text-2xl font-bold text-white capitalize">{org.plan}</p>
+                  <p className="text-xs text-slate-400">Plan ({org.deviceLimit} device limit)</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 text-sm text-slate-400">
+                <span>Slug: <code className="text-slate-300">{org.slug}</code></span>
+                <span>Owner: <span className="text-slate-300">{org.owner.name} ({org.owner.email})</span></span>
+              </div>
+              {orgMsg && <p className={`text-sm ${orgMsg.ok ? "text-green-400" : "text-red-400"}`}>{orgMsg.text}</p>}
+              {(user?.role === "owner" || user?.role === "admin") && (
+                <Button className="bg-primary hover:bg-primary-dark gap-2" disabled={orgSaving} onClick={async () => {
+                  setOrgSaving(true); setOrgMsg(null);
+                  try {
+                    const res = await fetch("/api/org", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: orgName }) });
+                    if (res.ok) { setOrgMsg({ text: "Organization updated.", ok: true }); setOrg(prev => prev ? { ...prev, name: orgName } : prev); }
+                    else { const d = await res.json().catch(() => ({})); setOrgMsg({ text: d.error || "Failed.", ok: false }); }
+                  } catch { setOrgMsg({ text: "Failed.", ok: false }); }
+                  finally { setOrgSaving(false); }
+                }}>
+                  {orgSaving && <Loader2 className="w-4 h-4 animate-spin" />} Save Organization
+                </Button>
+              )}
+            </>
+          ) : (
+            <p className="text-slate-500">Loading organization...</p>
+          )}
         </CardContent>
       </Card>
 
