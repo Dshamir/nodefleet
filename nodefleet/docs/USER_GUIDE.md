@@ -67,7 +67,7 @@ Upload new files directly from the browser via presigned URL to MinIO. Delete fi
 
 ### Schedules (/schedules)
 
-Create and manage automated tasks that run on cron schedules. Full CRUD support: create schedules with device assignments, toggle active/inactive, and delete with confirmation.
+Create and manage automated tasks that run on cron schedules. Full CRUD support: create schedules with device assignments, toggle active/inactive, edit all schedule fields (name, description, repeat type, cron expression, conditions, items, and device assignments), and delete with confirmation. When editing, updating items or device IDs replaces all existing entries.
 
 **Conditional execution:** Schedules support a `conditions` field that gates task execution. For example, set `batteryBelow: 20` to only run the task when the device battery is below 20%, or `tempAbove: 60` to trigger when CPU temperature exceeds 60 degrees C. Tasks only execute when all specified conditions are met.
 
@@ -114,6 +114,16 @@ Generate and manage API keys for programmatic access to NodeFleet:
 - **Generate Key** -- Click "Generate" to create a new key. The key format is `nf_<8char>_<32char>`, derived from a SHA-256 hash of org + user + random salt. The full key is displayed **only once** with a copy button -- store it securely.
 - **List Keys** -- View all your keys. Only the key prefix (e.g., `nf_a1b2c3d4`) is shown for security.
 - **Revoke Key** -- Permanently delete a key. This action cannot be undone.
+
+**Using API Keys for programmatic access:**
+
+Include the key as a Bearer token in the `Authorization` header of any API request:
+
+```
+Authorization: Bearer nf_a1b2c3d4_e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0
+```
+
+The `authenticateRequest()` middleware validates both session cookies and Bearer API keys. On each request, the server updates the key's `lastUsedAt` timestamp and rejects expired keys with a `401` response. API keys inherit the permissions of the user who created them.
 
 #### Billing
 
@@ -177,7 +187,12 @@ The seed data includes 3 demo fleets:
 
 ### Editing a Device
 
-Click on a device to open its detail page. Edit the device name inline and save.
+Click on a device to open its detail page. From the detail page you can:
+
+- **Edit device name** -- Change the name inline and save.
+- **Change fleet** -- The fleet is shown as a dropdown (not a raw UUID). Select a different fleet from the dropdown to reassign the device inline.
+- **Regenerate pairing code** -- The current pairing code is displayed along with its status context (active, expired, or already paired). Click the **"New Code"** button to regenerate a fresh 6-character pairing code with a new 24-hour expiry window. Regenerating a code also resets the device status to `"pairing"`.
+- **Update other fields** -- Hardware model, firmware version, status, and metadata can all be updated via the PATCH API.
 
 ### Deleting a Device
 
@@ -233,7 +248,7 @@ You can send the following commands to a connected device:
 
 Click any device to open its detail page at `/devices/[id]`. The detail page fetches real telemetry, GPS, and command data from the API. It has 4 tabs:
 
-- **Overview** -- Device info, status, fleet assignment, and latest telemetry snapshot.
+- **Overview** -- Device info, status context, fleet assignment (shown as a dropdown for inline changes), pairing code with a **"New Code"** button to regenerate, and latest telemetry snapshot.
 - **Telemetry** -- Historical telemetry charts and records.
 - **GPS** -- Location history with map visualization.
 - **Commands** -- Command history and a **Send Command** button to issue commands directly.

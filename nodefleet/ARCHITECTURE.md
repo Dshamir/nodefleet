@@ -276,6 +276,18 @@ Example: `NF-TESTORGA-64E58D`. This identifier is displayed in the Settings page
 
 API keys are generated as `nf_<8char>_<32char>` strings. The full key is shown to the user exactly once at creation time. Only the SHA-256 hash of the key is stored in the `api_keys` table; the `key_prefix` column stores the first segment for display purposes (e.g., `nf_a1b2c3d4`). Keys are scoped to both a user and an organization.
 
+### API Key Authentication Middleware
+
+The `authenticateRequest()` middleware provides a unified authentication layer that supports both session cookies and API keys:
+
+1. The middleware first checks for a valid NextAuth session cookie.
+2. If no session is found, it looks for an `Authorization: Bearer nf_XXXXXXXX_YYYYYYYY` header.
+3. For API key auth, the middleware hashes the provided key with SHA-256 and looks up the matching `key_hash` in the `api_keys` table.
+4. If the key exists, it checks the `expiresAt` field -- expired keys are rejected with `401`.
+5. On success, the middleware updates the `lastUsedAt` timestamp and resolves the associated user and organization context, so downstream handlers operate as if a session user made the request.
+
+This allows all protected API endpoints to be accessed programmatically without a browser session.
+
 ### CSRF Protection
 
 - NextAuth v5 includes built-in CSRF protection for all authentication endpoints.

@@ -4,7 +4,12 @@ Base URL: `http://localhost:8888`
 
 ## Authentication
 
-All protected endpoints require a session cookie obtained via NextAuth login. Device endpoints (heartbeat, pair) require a Bearer JWT token in the `Authorization` header.
+All protected endpoints require authentication via one of two methods:
+
+1. **Session cookie** -- Obtained via NextAuth login (browser-based usage).
+2. **API key** -- Pass a Bearer token in the `Authorization` header: `Authorization: Bearer nf_XXXXXXXX_YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY`. The middleware (`authenticateRequest()`) checks for a valid session cookie first; if none is found, it looks for a Bearer API key. On each successful API key request, the server updates the key's `lastUsedAt` timestamp and checks the `expiresAt` field (expired keys are rejected with `401`).
+
+Device endpoints (heartbeat, pair) require a Bearer JWT token (not an API key) in the `Authorization` header.
 
 ---
 
@@ -303,9 +308,19 @@ PATCH /api/devices/[id]
 
 **Content-Type:** `application/json`
 
-Accepts any subset of device fields (`name`, `hwModel`, `serialNumber`).
+**Content-Type:** `application/json`
 
-**Response (200):** Updated device object.
+| Field                 | Type    | Required | Description                                                                 |
+|-----------------------|---------|----------|-----------------------------------------------------------------------------|
+| name                  | string  | No       | Device display name                                                         |
+| hwModel               | string  | No       | Hardware model string                                                       |
+| fleetId               | string  | No       | Fleet ID to reassign the device to (or `null` to unassign)                  |
+| firmwareVersion       | string  | No       | Firmware version string                                                     |
+| status                | string  | No       | Device status (online, offline, pairing, disabled)                          |
+| metadata              | object  | No       | Arbitrary JSON metadata                                                     |
+| regeneratePairingCode | boolean | No       | When `true`, generates a new 6-character pairing code, resets the 24-hour expiry window, and sets the device status to `"pairing"` |
+
+**Response (200):** Updated device object. When `regeneratePairingCode` was `true`, the response includes the new `pairingCode` and `pairingCodeExpiresAt` fields.
 
 ### Delete Device
 
@@ -656,9 +671,18 @@ PATCH /api/schedules/[id]
 
 **Content-Type:** `application/json`
 
-Accepts any subset of schedule fields.
+| Field          | Type     | Required | Description                                                                 |
+|----------------|----------|----------|-----------------------------------------------------------------------------|
+| name           | string   | No       | Schedule name                                                               |
+| description    | string   | No       | Schedule description                                                        |
+| repeatType     | string   | No       | ONCE, DAILY, WEEKLY, MONTHLY                                                |
+| cronExpression | string   | No       | Cron expression for timing                                                  |
+| isActive       | boolean  | No       | Whether the schedule is active                                              |
+| conditions     | object   | No       | Execution conditions JSONB                                                  |
+| items          | array    | No       | Array of schedule item objects (replaces all existing items when provided)   |
+| deviceIds      | string[] | No       | Array of device IDs (replaces all existing assignments when provided)        |
 
-**Response (200):** Updated schedule object.
+**Response (200):** Updated schedule object with items and device assignments.
 
 ### Delete Schedule
 
