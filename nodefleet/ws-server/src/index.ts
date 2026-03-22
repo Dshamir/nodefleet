@@ -6,6 +6,7 @@ import * as url from 'url';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
 import * as jwt from 'jsonwebtoken';
+import { UDPDiscoveryService, MDNSResponder } from './discovery.js';
 
 // ============================================================================
 // TYPES
@@ -110,6 +111,8 @@ class NodeFleetWSServer {
   private redis: Redis;
   private redisPub: Redis;
   private logger: Logger;
+  private udpDiscovery: UDPDiscoveryService;
+  private mdnsResponder: MDNSResponder;
 
   // Device and dashboard connection tracking
   private devices: Map<string, DeviceInfo> = new Map();
@@ -120,12 +123,15 @@ class NodeFleetWSServer {
 
   // Configuration
   private readonly WS_PORT = parseInt(process.env.WS_PORT || '8080', 10);
+  private readonly UDP_DISCOVERY_PORT = parseInt(process.env.UDP_DISCOVERY_PORT || '5555', 10);
+  private readonly HTTP_PORT = parseInt(process.env.HTTP_PORT || '80', 10);
   private readonly REDIS_HOST = process.env.REDIS_HOST || 'localhost';
   private readonly REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
   private readonly JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
   private readonly DEVICE_TOKEN_SECRET = process.env.DEVICE_TOKEN_SECRET || 'device-secret';
   private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
   private readonly HEARTBEAT_TIMEOUT = 90000; // 90 seconds
+  private readonly ENABLE_DISCOVERY = process.env.ENABLE_DISCOVERY !== 'false';
 
   constructor() {
     this.logger = new Logger();
@@ -143,6 +149,17 @@ class NodeFleetWSServer {
       port: this.REDIS_PORT,
       retryStrategy: (times) => Math.min(times * 50, 2000),
     });
+
+    // Discovery services (UDP broadcast + mDNS)
+    const discoveryConfig = {
+      udpPort: this.UDP_DISCOVERY_PORT,
+      wsPort: this.WS_PORT,
+      httpPort: this.HTTP_PORT,
+      serviceName: 'nodefleet',
+      logger: this.logger,
+    };
+    this.udpDiscovery = new UDPDiscoveryService(discoveryConfig);
+    this.mdnsResponder = new MDNSResponder(discoveryConfig);
 
     this.setupRedisErrorHandling();
     this.setupHTTPServer();
@@ -863,10 +880,25 @@ class NodeFleetWSServer {
 
   async start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server.listen(this.WS_PORT, () => {
+      this.server.listen(this.WS_PORT, async () => {
         this.logger.info(`WebSocket server listening on port ${this.WS_PORT}`);
         this.logger.info('Device path: /device?token=xxx');
         this.logger.info('Dashboard path: /dashboard?token=xxx');
+
+        // Start discovery services
+        if (this.ENABLE_DISCOVERY) {
+          try {
+            await this.udpDiscovery.start();
+          } catch (err) {
+            this.logger.error('UDP Discovery failed to start (non-fatal)', err);
+          }
+          try {
+            await this.mdnsResponder.start();
+          } catch (err) {
+            this.logger.error('mDNS responder failed to start (non-fatal)', err);
+          }
+        }
+
         resolve();
       });
 
@@ -895,6 +927,10 @@ class NodeFleetWSServer {
         ws.close(1000, 'Server shutting down');
       }
     });
+
+    // Stop discovery services
+    await this.udpDiscovery.stop();
+    await this.mdnsResponder.stop();
 
     // Close Redis connections
     await this.redis.quit();

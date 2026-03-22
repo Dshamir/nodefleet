@@ -110,13 +110,17 @@ services:
       - .env
     ports:
       - "8081:8080"
+      - "5555:5555/udp"
     networks:
       - nodefleet-net
     environment:
       PORT: 8080
       WS_PORT: 8080
+      UDP_DISCOVERY_PORT: 5555
+      HTTP_PORT: 8888
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      ENABLE_DISCOVERY: "true"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 10s
