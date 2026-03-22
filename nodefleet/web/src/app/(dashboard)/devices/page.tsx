@@ -29,6 +29,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
+import { NetworkScanner } from "@/components/dashboard/network-scanner";
 import { Plus, Pencil, Trash2, Search, Loader2, Copy, Check } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -430,6 +431,10 @@ export default function DevicesPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Devices Table */}
+      {/* Network Discovery Scanner */}
+      <NetworkScanner />
 
       {/* Devices Table */}
       <Card className="bg-slate-900/50 border-slate-800 overflow-hidden">
