@@ -181,6 +181,12 @@ The database is managed with Drizzle ORM. All tables use UUID primary keys with 
 | `schedule_assignments` | Many-to-many link between schedules and devices            |
 | `device_commands`      | Command queue with full lifecycle status tracking          |
 
+### API Keys
+
+| Table                  | Description                                                |
+|------------------------|------------------------------------------------------------|
+| `api_keys`             | API keys with SHA-256 hashed key, prefix (for display), user/org association, optional expiration, last-used tracking. Columns: `id`, `user_id`, `org_id`, `name`, `key_hash`, `key_prefix`, `last_used_at`, `expires_at`, `created_at` |
+
 ### Authentication
 
 | Table                  | Description                                                |
@@ -256,6 +262,19 @@ This architecture decouples the Web App from the WS Server, allowing them to sca
 - User sessions use signed JWT tokens with a configurable secret (`NEXTAUTH_SECRET`).
 - Device tokens are stored in the database with explicit expiration and revocation timestamps.
 - Tokens are validated on every WebSocket connection and API request.
+
+### Organization Identifiers
+
+Each organization is assigned a human-readable identifier in the format `NF-<PREFIX>-<HASH>`, where:
+
+- `PREFIX` is the first 8 characters of the organization name (uppercased, non-alphanumeric characters stripped).
+- `HASH` is the first 6 characters of a SHA-256 hash computed from `orgId:orgName:ownerEmail`.
+
+Example: `NF-TESTORGA-64E58D`. This identifier is displayed in the Settings page and is useful for support and cross-referencing.
+
+### API Key Security
+
+API keys are generated as `nf_<8char>_<32char>` strings. The full key is shown to the user exactly once at creation time. Only the SHA-256 hash of the key is stored in the `api_keys` table; the `key_prefix` column stores the first segment for display purposes (e.g., `nf_a1b2c3d4`). Keys are scoped to both a user and an organization.
 
 ### CSRF Protection
 

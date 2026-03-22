@@ -81,7 +81,41 @@ Each schedule is assigned to one or more devices and runs according to the confi
 
 ### Settings (/settings)
 
-Manage your account settings and organization configuration. Settings are fetched from your real user session data -- no hardcoded values.
+A fully functional settings page with 6 sections. All data is fetched from real APIs -- no hardcoded values.
+
+#### Profile
+
+Edit your display name and email address. Changes are saved via `PATCH /api/auth/profile`.
+
+#### Organization
+
+Displays your organization details:
+
+- **Readable Org ID** -- A human-readable identifier in the format `NF-<PREFIX>-<HASH>` (e.g., `NF-TESTORGA-64E58D`). The prefix is derived from the first 8 characters of the org name, and the hash is the first 6 characters of a SHA-256 digest of `orgId:orgName:ownerEmail`.
+- **Organization Name** -- Editable by users with the `owner` or `admin` role.
+- **Stats Cards** -- Shows counts for devices, media files, members, and the current plan.
+- **Slug** -- The URL-friendly organization identifier.
+- **Owner Info** -- Name and email of the organization owner.
+
+#### Change Password
+
+Change your password by providing your current password, a new password, and a confirmation. The current password is verified with bcrypt on the server before the change is applied.
+
+#### API Keys
+
+Generate and manage API keys for programmatic access to NodeFleet:
+
+- **Generate Key** -- Click "Generate" to create a new key. The key format is `nf_<8char>_<32char>`, derived from a SHA-256 hash of org + user + random salt. The full key is displayed **only once** with a copy button -- store it securely.
+- **List Keys** -- View all your keys. Only the key prefix (e.g., `nf_a1b2c3d4`) is shown for security.
+- **Revoke Key** -- Permanently delete a key. This action cannot be undone.
+
+#### Billing
+
+Links to `/settings/billing` where you can view your current subscription plan and upgrade.
+
+#### Danger Zone
+
+Permanently delete your account. Requires password confirmation before proceeding. If you are the sole owner of your organization, the organization and all its associated data (devices, media, members) will also be deleted.
 
 ### Billing (/settings/billing)
 

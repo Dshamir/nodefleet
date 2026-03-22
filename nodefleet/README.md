@@ -92,6 +92,8 @@ nodefleet/
 - **Inline media viewer** -- View images, video, and audio directly in the content library via S3 presigned URLs. Click-to-expand modal for full-size viewing. No downloads needed. Filter content with a 3-tier hierarchy: device, media type, and filename search. Each content card shows the source device name.
 - **Task scheduling** -- Create recurring or one-time schedules with cron expressions and conditional execution (e.g., battery below threshold, temperature above limit). Assign them to devices and automate command execution.
 - **Multi-tenant organizations** -- Organizations with role-based access control (owner, admin, member, viewer) and tiered plans (free, pro, team, enterprise).
+- **Settings page** -- Fully functional settings with 6 sections: Profile editing, Organization management (readable org ID in NF-PREFIX-HASH format, stats cards, editable org name), Change Password, API Keys (generate, list, revoke), Billing link, and Danger Zone (account deletion with password confirmation).
+- **API key management** -- Generate SHA-256 hashed API keys (format: `nf_<8char>_<32char>`), shown once with copy button. List keys (prefix only) and revoke them. Keys are scoped to the user and organization.
 - **Stripe billing** -- Subscription management with per-organization device and storage limits.
 - **JWT device authentication** -- Devices authenticate via a pairing code flow that issues JWT tokens for persistent, secure WebSocket connections.
 - **Device detail page** -- Per-device view with real telemetry, GPS, and command history across 4 tabs (Overview, Telemetry, GPS, Commands). Send commands directly from the detail page.

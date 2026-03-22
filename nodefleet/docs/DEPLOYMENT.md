@@ -72,6 +72,9 @@ INSERT INTO organizations (id, name, slug, owner_id, plan, device_limit, storage
 INSERT INTO org_members (org_id, user_id, role) VALUES
   ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 'owner');
 
+-- Note: The organization will be assigned a readable identifier (e.g., NF-TESTORGA-64E58D)
+-- automatically by the application, derived from SHA-256 of orgId:orgName:ownerEmail.
+
 -- Seed demo devices
 INSERT INTO devices (org_id, name, hw_model, serial_number, pairing_code, status, firmware_version, last_heartbeat_at, last_ip) VALUES
   ('b0000000-0000-0000-0000-000000000001', 'Gateway Alpha', 'ESP32-S3', 'NF-ESP32-001', 'A1B2C3', 'online', '2.3.1', now() - interval '2 minutes', '10.0.1.101'),
@@ -94,6 +97,21 @@ The seed SQL creates test data that populates all dashboard pages:
 - 3 fleets: HQ Office (San Francisco), Warehouse West (Los Angeles), Field Ops (Houston)
 - 5 devices with various statuses, each assigned to a fleet via `fleet_id`
 - 12 telemetry records, 10 GPS points, 6 media files, 4 schedules with assignments, and 6 command history entries
+- Organization readable identifiers are generated at runtime (format: `NF-PREFIX-HASH`)
+
+The `api_keys` table is created automatically by the application schema. It stores:
+
+| Column         | Description                                      |
+|----------------|--------------------------------------------------|
+| `id`           | UUID primary key                                 |
+| `user_id`      | Foreign key to `users`                           |
+| `org_id`       | Foreign key to `organizations`                   |
+| `name`         | Descriptive name for the key                     |
+| `key_hash`     | SHA-256 hash of the full API key                 |
+| `key_prefix`   | First segment of the key (e.g., `nf_a1b2c3d4`)  |
+| `last_used_at` | Timestamp of last usage (nullable)               |
+| `expires_at`   | Optional expiration timestamp                    |
+| `created_at`   | Creation timestamp                               |
 
 To remove all seed data and start fresh:
 ```bash
