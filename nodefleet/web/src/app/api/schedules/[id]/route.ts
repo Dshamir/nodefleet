@@ -10,9 +10,22 @@ import {
 } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
 
+import { v4 as uuidv4 } from "uuid";
+
 const updateScheduleSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  description: z.string().max(1000).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  repeatType: z.enum(["once", "daily", "weekly", "monthly", "cron"]).optional(),
+  cronExpression: z.string().max(255).nullable().optional(),
+  isActive: z.boolean().optional(),
+  conditions: z.record(z.number()).nullable().optional(),
+  items: z.array(z.object({
+    command: z.enum(["capture_photo", "capture_video", "record_audio", "stream_video", "reboot", "update_firmware", "custom"]),
+    commandPayload: z.any().optional(),
+    orderIndex: z.number().min(0).default(0),
+    durationSeconds: z.number().nullable().optional(),
+  })).optional(),
+  deviceIds: z.array(z.string().uuid()).optional(),
 });
 
 export async function GET(
@@ -106,20 +119,52 @@ export async function PATCH(
     const body = await request.json();
     const validated = updateScheduleSchema.parse(body);
 
-    // Build update object
-    const updateData: any = { updatedAt: new Date() };
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (validated.name !== undefined) updateData.name = validated.name;
-    if (validated.description !== undefined)
-      updateData.description = validated.description;
+    if (validated.description !== undefined) updateData.description = validated.description;
+    if (validated.repeatType !== undefined) updateData.repeatType = validated.repeatType;
+    if (validated.cronExpression !== undefined) updateData.cronExpression = validated.cronExpression;
+    if (validated.isActive !== undefined) updateData.isActive = validated.isActive;
+    if (validated.conditions !== undefined) updateData.conditions = validated.conditions;
 
-    // Update schedule
-    const updated = await db
+    const [updated] = await db
       .update(schedules)
       .set(updateData)
       .where(eq(schedules.id, params.id))
       .returning();
 
-    return NextResponse.json(updated[0]);
+    // Replace items if provided
+    if (validated.items) {
+      await db.delete(scheduleItems).where(eq(scheduleItems.scheduleId, params.id));
+      if (validated.items.length > 0) {
+        await db.insert(scheduleItems).values(
+          validated.items.map((item) => ({
+            id: uuidv4(),
+            scheduleId: params.id,
+            command: item.command,
+            commandPayload: item.commandPayload || {},
+            orderIndex: item.orderIndex,
+            durationSeconds: item.durationSeconds || null,
+          }))
+        );
+      }
+    }
+
+    // Replace device assignments if provided
+    if (validated.deviceIds) {
+      await db.delete(scheduleAssignments).where(eq(scheduleAssignments.scheduleId, params.id));
+      if (validated.deviceIds.length > 0) {
+        await db.insert(scheduleAssignments).values(
+          validated.deviceIds.map((deviceId) => ({
+            id: uuidv4(),
+            scheduleId: params.id,
+            deviceId,
+          }))
+        );
+      }
+    }
+
+    return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });

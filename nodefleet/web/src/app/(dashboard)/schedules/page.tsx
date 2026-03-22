@@ -28,7 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Clock, Plus, Pencil, Trash2, Loader2, AlertCircle } from "lucide-react";
+import { Clock, Plus, Pencil, Trash2, Loader2, AlertCircle, HelpCircle } from "lucide-react";
 
 interface Schedule {
   id: string;
@@ -55,6 +55,17 @@ export default function SchedulesPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editSchedule, setEditSchedule] = useState<Schedule | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [editRepeat, setEditRepeat] = useState("daily");
+  const [editCron, setEditCron] = useState("");
+  const [editCommand, setEditCommand] = useState("capture_photo");
+  const [editDevices, setEditDevices] = useState<string[]>([]);
+  const [editCondBattery, setEditCondBattery] = useState("");
+  const [editCondTemp, setEditCondTemp] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   // Create form state
   const [name, setName] = useState("");
@@ -163,6 +174,61 @@ export default function SchedulesPage() {
     );
   }
 
+  const cronPresets = [
+    { label: "Every hour", value: "0 * * * *" },
+    { label: "Every day at 9am", value: "0 9 * * *" },
+    { label: "Every day at 6pm", value: "0 18 * * *" },
+    { label: "Every Mon 8am", value: "0 8 * * 1" },
+    { label: "Every Wed 8am", value: "0 8 * * 3" },
+    { label: "1st of month 2am", value: "0 2 1 * *" },
+    { label: "Every 15 min", value: "*/15 * * * *" },
+    { label: "Every 6 hours", value: "0 */6 * * *" },
+  ];
+
+  function openEdit(s: Schedule) {
+    setEditSchedule(s);
+    setEditName(s.name);
+    setEditDesc(s.description || "");
+    setEditRepeat(s.repeatType);
+    setEditCron(s.cronExpression || "");
+    setEditCommand(s.items?.[0]?.command || "capture_photo");
+    setEditDevices(s.assignments?.map(a => a.deviceId) || []);
+    setEditCondBattery(s.conditions?.batteryBelow?.toString() || "");
+    setEditCondTemp(s.conditions?.tempAbove?.toString() || "");
+    setEditOpen(true);
+  }
+
+  async function handleEdit() {
+    if (!editSchedule || !editName.trim()) return;
+    setEditSaving(true);
+    try {
+      const conditions: Record<string, number> = {};
+      if (editCondBattery) conditions.batteryBelow = Number(editCondBattery);
+      if (editCondTemp) conditions.tempAbove = Number(editCondTemp);
+
+      await fetch(`/api/schedules/${editSchedule.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName,
+          description: editDesc || null,
+          repeatType: editRepeat,
+          cronExpression: editCron || null,
+          conditions: Object.keys(conditions).length > 0 ? conditions : null,
+          items: [{ command: editCommand, commandPayload: {}, orderIndex: 1 }],
+          deviceIds: editDevices,
+        }),
+      });
+      setEditOpen(false);
+      fetchSchedules();
+    } catch { setError("Failed to update schedule"); }
+    finally { setEditSaving(false); }
+  }
+
+  function toggleEditDevice(id: string) {
+    setEditDevices(prev => prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -222,7 +288,16 @@ export default function SchedulesPage() {
                 <div>
                   <label className="text-sm text-slate-300">Cron Expression</label>
                   <Input value={cronExpression} onChange={(e) => setCronExpression(e.target.value)}
-                    className="bg-slate-800 border-slate-700 text-white mt-1" placeholder="0 9 * * *" />
+                    className="bg-slate-800 border-slate-700 text-white mt-1 font-mono" placeholder="0 9 * * *" />
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {cronPresets.map((p) => (
+                      <button key={p.value} type="button" onClick={() => setCronExpression(p.value)}
+                        className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700">
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Format: minute hour day month weekday</p>
                 </div>
               </div>
               <div>
@@ -355,6 +430,10 @@ export default function SchedulesPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white"
+                            onClick={() => openEdit(s)}>
+                            <Pencil className="w-4 h-4" />
+                          </Button>
                           <Button variant="ghost" size="icon" className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
                             onClick={() => setDeleteId(s.id)}>
                             <Trash2 className="w-4 h-4" />
@@ -369,6 +448,99 @@ export default function SchedulesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Schedule Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="bg-slate-900 border-slate-800 max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-white">Edit Schedule</DialogTitle>
+            <DialogDescription className="text-slate-400">Update schedule configuration.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 mt-4">
+            <div>
+              <label className="text-sm text-slate-300">Name</label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white mt-1" />
+            </div>
+            <div>
+              <label className="text-sm text-slate-300">Description</label>
+              <Input value={editDesc} onChange={(e) => setEditDesc(e.target.value)}
+                className="bg-slate-800 border-slate-700 text-white mt-1" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm text-slate-300">Repeat Type</label>
+                <Select value={editRepeat} onValueChange={setEditRepeat}>
+                  <SelectTrigger className="bg-slate-800 border-slate-700 text-white mt-1"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    <SelectItem value="once">Once</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="cron">Custom Cron</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm text-slate-300">Cron Expression</label>
+                <Input value={editCron} onChange={(e) => setEditCron(e.target.value)}
+                  className="bg-slate-800 border-slate-700 text-white mt-1 font-mono" />
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {cronPresets.map((p) => (
+                    <button key={p.value} type="button" onClick={() => setEditCron(p.value)}
+                      className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 border border-slate-700">
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-slate-300">Command</label>
+              <Select value={editCommand} onValueChange={setEditCommand}>
+                <SelectTrigger className="bg-slate-800 border-slate-700 text-white mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="capture_photo">Capture Photo</SelectItem>
+                  <SelectItem value="capture_video">Capture Video</SelectItem>
+                  <SelectItem value="record_audio">Record Audio</SelectItem>
+                  <SelectItem value="reboot">Reboot</SelectItem>
+                  <SelectItem value="update_firmware">Update Firmware</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400">Battery below (%)</label>
+                <Input type="number" value={editCondBattery} onChange={(e) => setEditCondBattery(e.target.value)}
+                  className="bg-slate-800 border-slate-700 text-white mt-1" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-400">Temp above (C)</label>
+                <Input type="number" value={editCondTemp} onChange={(e) => setEditCondTemp(e.target.value)}
+                  className="bg-slate-800 border-slate-700 text-white mt-1" />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm text-slate-300 font-medium">Assign Devices</label>
+              <div className="mt-2 max-h-32 overflow-y-auto space-y-1">
+                {devices.map((d) => (
+                  <label key={d.id} className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer hover:bg-slate-800 px-2 py-1 rounded">
+                    <input type="checkbox" checked={editDevices.includes(d.id)} onChange={() => toggleEditDevice(d.id)} className="rounded border-slate-600" />
+                    {d.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" className="flex-1" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button className="flex-1 bg-primary hover:bg-primary-dark gap-2" onClick={handleEdit} disabled={editSaving}>
+                {editSaving && <Loader2 className="w-4 h-4 animate-spin" />} Save Changes
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete Confirmation */}
       <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>

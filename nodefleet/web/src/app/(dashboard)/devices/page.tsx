@@ -546,6 +546,47 @@ export default function DevicesPage() {
                 className="bg-slate-800 border-slate-700"
               />
             </div>
+
+            {/* Pairing code info + regenerate */}
+            {editDevice && (
+              <div className="p-3 bg-slate-800/50 rounded-lg border border-slate-700">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-400">Pairing Code</p>
+                    <p className="font-mono text-white">{editDevice.pairingCode || "—"}</p>
+                    <p className="text-xs text-slate-500">
+                      {editDevice.status === "pairing" ? "Waiting for device to pair" : `Status: ${editDevice.status}`}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1"
+                    onClick={async () => {
+                      setEditSaving(true);
+                      try {
+                        const res = await fetch(`/api/devices/${editDevice.id}`, {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ regeneratePairingCode: true }),
+                        });
+                        if (res.ok) {
+                          const updated = await res.json();
+                          setEditDevice({ ...editDevice, pairingCode: updated.pairingCode, status: updated.status });
+                          await fetchDevices();
+                        }
+                      } catch {}
+                      finally { setEditSaving(false); }
+                    }}
+                    disabled={editSaving}
+                  >
+                    {editSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                    New Code
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {editError && <p className="text-sm text-red-400">{editError}</p>}
             <div className="flex gap-2">
               <Button

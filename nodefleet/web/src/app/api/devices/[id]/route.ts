@@ -2,13 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { devices, orgMembers, telemetry, gpsData } from "@/lib/db/schema";
+import { devices, orgMembers, telemetryRecords, gpsRecords } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
+import { generatePairingCode } from "@/lib/utils";
 
 const updateDeviceSchema = z.object({
   name: z.string().min(1).max(255).optional(),
-  description: z.string().max(1000).optional(),
+  hwModel: z.string().min(1).max(255).optional(),
+  fleetId: z.string().uuid().nullable().optional(),
+  firmwareVersion: z.string().max(50).nullable().optional(),
+  status: z.enum(["online", "offline", "pairing", "disabled"]).optional(),
   metadata: z.record(z.any()).optional(),
+  regeneratePairingCode: z.boolean().optional(),
 });
 
 export async function GET(
@@ -42,20 +47,18 @@ export async function GET(
       return NextResponse.json({ error: "Device not found" }, { status: 404 });
     }
 
-    // Fetch recent telemetry (last 10 records)
     const recentTelemetry = await db
       .select()
-      .from(telemetry)
-      .where(eq(telemetry.deviceId, params.id))
-      .orderBy(desc(telemetry.timestamp))
+      .from(telemetryRecords)
+      .where(eq(telemetryRecords.deviceId, params.id))
+      .orderBy(desc(telemetryRecords.timestamp))
       .limit(10);
 
-    // Fetch recent GPS data (last 10 points)
     const recentGps = await db
       .select()
-      .from(gpsData)
-      .where(eq(gpsData.deviceId, params.id))
-      .orderBy(desc(gpsData.timestamp))
+      .from(gpsRecords)
+      .where(eq(gpsRecords.deviceId, params.id))
+      .orderBy(desc(gpsRecords.timestamp))
       .limit(10);
 
     return NextResponse.json({
@@ -105,20 +108,37 @@ export async function PATCH(
     const body = await request.json();
     const validated = updateDeviceSchema.parse(body);
 
-    // Build update object
-    const updateData: any = {};
+    const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (validated.name !== undefined) updateData.name = validated.name;
-    if (validated.description !== undefined) updateData.description = validated.description;
+    if (validated.hwModel !== undefined) updateData.hwModel = validated.hwModel;
+    if (validated.fleetId !== undefined) updateData.fleetId = validated.fleetId;
+    if (validated.firmwareVersion !== undefined) updateData.firmwareVersion = validated.firmwareVersion;
+    if (validated.status !== undefined) updateData.status = validated.status;
     if (validated.metadata !== undefined) updateData.metadata = validated.metadata;
 
-    // Update device
-    const updated = await db
+    // Regenerate pairing code (for expired codes or re-pairing)
+    if (validated.regeneratePairingCode) {
+      let newCode: string;
+      let attempts = 0;
+      do {
+        newCode = generatePairingCode(6);
+        const dup = await db.select({ id: devices.id }).from(devices)
+          .where(eq(devices.pairingCode, newCode)).limit(1);
+        if (dup.length === 0) break;
+        attempts++;
+      } while (attempts < 10);
+      updateData.pairingCode = newCode!;
+      updateData.pairingCodeExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      updateData.status = "pairing";
+    }
+
+    const [updated] = await db
       .update(devices)
       .set(updateData)
       .where(eq(devices.id, params.id))
       .returning();
 
-    return NextResponse.json(updated[0]);
+    return NextResponse.json(updated);
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });
