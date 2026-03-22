@@ -91,10 +91,17 @@ const fullAuthConfig = {
             },
           })
 
-          if (dbUser?.orgMembers && dbUser.orgMembers.length > 0) {
-            const primaryMembership = dbUser.orgMembers[0]
-            token.orgId = primaryMembership.orgId
-            token.role = primaryMembership.role
+          if (dbUser) {
+            // Always sync name/email from DB so profile updates take effect
+            token.name = dbUser.name
+            token.email = dbUser.email
+            token.image = dbUser.image
+
+            if (dbUser.orgMembers && dbUser.orgMembers.length > 0) {
+              const primaryMembership = dbUser.orgMembers[0]
+              token.orgId = primaryMembership.orgId
+              token.role = primaryMembership.role
+            }
           }
         } catch (error) {
           console.error('JWT callback error:', error)

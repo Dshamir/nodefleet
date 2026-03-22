@@ -1,112 +1,146 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Check, Zap } from "lucide-react";
+import { Check, Zap, Loader2 } from "lucide-react";
+
+interface OrgData {
+  name: string;
+  plan: string;
+  deviceLimit: number;
+  storageLimit: number;
+  stats: { devices: number; media: number; members: number };
+}
+
+const plans = [
+  {
+    id: "free",
+    name: "Free",
+    price: "$0",
+    period: "/month",
+    description: "Perfect for getting started",
+    deviceLimit: 3,
+    storage: "1 GB",
+    features: ["Up to 3 devices", "Basic monitoring", "1 GB storage", "Community support", "7-day data retention"],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: "$19.99",
+    period: "/month",
+    description: "For growing operations",
+    deviceLimit: 50,
+    storage: "50 GB",
+    features: ["Up to 50 devices", "Real-time monitoring", "50 GB storage", "Email support", "30-day data retention", "Custom integrations", "5 team members"],
+    highlight: true,
+  },
+  {
+    id: "team",
+    name: "Team",
+    price: "$49.99",
+    period: "/month",
+    description: "For established teams",
+    deviceLimit: 100,
+    storage: "500 GB",
+    features: ["Up to 100 devices", "Advanced analytics", "500 GB storage", "Priority support", "90-day data retention", "Custom integrations", "20 team members"],
+  },
+  {
+    id: "enterprise",
+    name: "Enterprise",
+    price: "Custom",
+    period: "",
+    description: "For large organizations",
+    deviceLimit: -1,
+    storage: "Unlimited",
+    features: ["Unlimited devices", "Dedicated support", "Custom storage", "SLA guarantee", "Unlimited retention", "Custom development", "Unlimited members", "On-premise option"],
+  },
+];
 
 export default function BillingPage() {
-  const currentPlan = "pro";
+  const [org, setOrg] = useState<OrgData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const plans = [
-    {
-      id: "free",
-      name: "Free",
-      price: "$0",
-      period: "/month",
-      description: "Perfect for getting started",
-      features: [
-        "Up to 5 devices",
-        "Basic monitoring",
-        "1 GB storage",
-        "Community support",
-        "7-day data retention",
-      ],
-      cta: "Current Plan",
-      disabled: true,
-    },
-    {
-      id: "pro",
-      name: "Pro",
-      price: "$99",
-      period: "/month",
-      description: "For growing operations",
-      features: [
-        "Up to 50 devices",
-        "Real-time monitoring",
-        "100 GB storage",
-        "Email support",
-        "30-day data retention",
-        "Custom integrations",
-        "Team members (5)",
-      ],
-      cta: "Current Plan",
-      disabled: true,
-      highlight: true,
-    },
-    {
-      id: "team",
-      name: "Team",
-      price: "$299",
-      period: "/month",
-      description: "For established teams",
-      features: [
-        "Unlimited devices",
-        "Advanced analytics",
-        "1 TB storage",
-        "Priority support",
-        "90-day data retention",
-        "Custom integrations",
-        "Team members (20)",
-        "Advanced permissions",
-      ],
-      cta: "Upgrade",
-      disabled: false,
-    },
-    {
-      id: "enterprise",
-      name: "Enterprise",
-      price: "Custom",
-      period: "",
-      description: "For large organizations",
-      features: [
-        "Unlimited everything",
-        "Dedicated support",
-        "Custom storage",
-        "SLA guarantee",
-        "Unlimited data retention",
-        "Custom development",
-        "Unlimited team members",
-        "Advanced security",
-        "On-premise option",
-      ],
-      cta: "Contact Sales",
-      disabled: false,
-    },
-  ];
+  useEffect(() => {
+    async function fetchOrg() {
+      try {
+        const res = await fetch("/api/org");
+        if (res.ok) {
+          const data = await res.json();
+          setOrg(data);
+        }
+      } catch {}
+      finally { setLoading(false); }
+    }
+    fetchOrg();
+  }, []);
+
+  function formatStorage(bytes: number): string {
+    if (bytes >= 1099511627776) return `${(bytes / 1099511627776).toFixed(0)} TB`;
+    if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(0)} GB`;
+    return `${(bytes / 1048576).toFixed(0)} MB`;
+  }
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center py-24">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const currentPlan = org?.plan || "free";
+  const currentPlanInfo = plans.find((p) => p.id === currentPlan);
 
   return (
     <div className="p-6 space-y-6 max-w-7xl">
-      {/* Page Header */}
       <div>
         <h1 className="text-3xl font-bold text-white mb-2">Billing & Plans</h1>
-        <p className="text-slate-400">Manage your subscription and billing information</p>
+        <p className="text-slate-400">Manage your subscription for {org?.name || "your organization"}</p>
       </div>
 
-      {/* Current Plan Info */}
+      {/* Current Plan */}
       <Card className="bg-gradient-to-r from-primary/10 to-cyan-500/10 border-primary/30">
         <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
               <p className="text-sm text-slate-400 mb-1">Current Plan</p>
-              <h3 className="text-2xl font-bold text-white">Pro Plan</h3>
+              <h3 className="text-2xl font-bold text-white capitalize">{currentPlan} Plan</h3>
               <p className="text-sm text-slate-400 mt-1">
-                $99/month • 18 of 50 devices used • Next billing date: Feb 10, 2024
+                {currentPlanInfo?.price}{currentPlanInfo?.period}
+                {" "} — {org?.stats.devices || 0} of {org?.deviceLimit || 0} devices used
+                {" "} — Storage: {formatStorage(org?.storageLimit || 0)}
               </p>
             </div>
-            <Button className="bg-primary hover:bg-primary-dark">
-              Manage Billing
-            </Button>
+            <Badge variant="secondary" className="text-sm capitalize px-3 py-1">
+              <Zap className="w-4 h-4 mr-1" /> {currentPlan}
+            </Badge>
+          </div>
+
+          {/* Usage bars */}
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <div className="flex justify-between text-xs text-slate-400 mb-1">
+                <span>Devices</span>
+                <span>{org?.stats.devices || 0} / {org?.deviceLimit || 0}</span>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${Math.min(100, ((org?.stats.devices || 0) / (org?.deviceLimit || 1)) * 100)}%` }}
+                />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between text-xs text-slate-400 mb-1">
+                <span>Members</span>
+                <span>{org?.stats.members || 0}</span>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-cyan-500 rounded-full" style={{ width: "20%" }} />
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -115,109 +149,73 @@ export default function BillingPage() {
       <div>
         <h2 className="text-2xl font-bold text-white mb-6">Choose Your Plan</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          {plans.map((plan) => (
-            <Card
-              key={plan.id}
-              className={`bg-slate-900/50 border-slate-800 transition-all ${
-                plan.highlight ? "ring-2 ring-primary shadow-glow-primary" : ""
-              }`}
-            >
-              <CardHeader>
-                {plan.highlight && (
-                  <Badge variant="success" className="w-fit mb-2">
-                    Recommended
-                  </Badge>
-                )}
-                <CardTitle className="text-xl">{plan.name}</CardTitle>
-                <p className="text-sm text-slate-400 mt-2">{plan.description}</p>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div>
-                  <div className="flex items-baseline gap-1 mb-1">
-                    <span className="text-3xl font-bold text-white">{plan.price}</span>
-                    {plan.period && <span className="text-slate-400">{plan.period}</span>}
-                  </div>
-                  {plan.id === "enterprise" && (
-                    <p className="text-xs text-slate-500">Contact for custom pricing</p>
+          {plans.map((plan) => {
+            const isCurrent = plan.id === currentPlan;
+            const isUpgrade = plans.indexOf(plan) > plans.findIndex((p) => p.id === currentPlan);
+            return (
+              <Card
+                key={plan.id}
+                className={`bg-slate-900/50 border-slate-800 transition-all ${
+                  plan.highlight && isCurrent ? "ring-2 ring-primary" : ""
+                } ${isCurrent ? "border-primary/50" : ""}`}
+              >
+                <CardHeader>
+                  {isCurrent && (
+                    <Badge className="w-fit mb-2 bg-primary/20 text-primary border-primary/30">
+                      Current Plan
+                    </Badge>
                   )}
-                </div>
+                  {plan.highlight && !isCurrent && (
+                    <Badge className="w-fit mb-2 bg-green-500/20 text-green-400 border-green-500/30">
+                      Recommended
+                    </Badge>
+                  )}
+                  <CardTitle className="text-xl">{plan.name}</CardTitle>
+                  <p className="text-sm text-slate-400 mt-2">{plan.description}</p>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div>
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className="text-3xl font-bold text-white">{plan.price}</span>
+                      {plan.period && <span className="text-slate-400">{plan.period}</span>}
+                    </div>
+                  </div>
 
-                <ul className="space-y-3">
-                  {plan.features.map((feature, idx) => (
-                    <li key={idx} className="flex items-start gap-3">
-                      <Check className="w-4 h-4 text-success flex-shrink-0 mt-0.5" />
-                      <span className="text-sm text-slate-300">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
+                  <ul className="space-y-3">
+                    {plan.features.map((feature, idx) => (
+                      <li key={idx} className="flex items-start gap-3">
+                        <Check className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                        <span className="text-sm text-slate-300">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
 
-                <Button
-                  className={`w-full ${
-                    plan.disabled
-                      ? "bg-slate-800 hover:bg-slate-800 cursor-not-allowed"
-                      : plan.highlight
-                        ? "bg-primary hover:bg-primary-dark"
-                        : "border border-slate-700 text-slate-300 hover:bg-slate-800"
-                  }`}
-                  disabled={plan.disabled}
-                  variant={plan.disabled ? "secondary" : plan.highlight ? "default" : "outline"}
-                >
-                  {plan.cta}
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                  <Button
+                    className="w-full"
+                    variant={isCurrent ? "secondary" : isUpgrade ? "default" : "outline"}
+                    disabled={isCurrent}
+                  >
+                    {isCurrent ? "Current Plan" : isUpgrade ? "Upgrade" : "Downgrade"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
 
-      {/* Billing History */}
-      <Card className="bg-slate-900/50 border-slate-800">
-        <CardHeader>
-          <CardTitle>Billing History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[
-              { date: "Jan 10, 2024", amount: "$99.00", status: "paid" },
-              { date: "Dec 10, 2023", amount: "$99.00", status: "paid" },
-              { date: "Nov 10, 2023", amount: "$99.00", status: "paid" },
-              { date: "Oct 10, 2023", amount: "$69.00", status: "paid" },
-            ].map((invoice, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between p-3 bg-slate-900/30 rounded-lg border border-slate-800"
-              >
-                <div>
-                  <p className="text-white font-medium">{invoice.date}</p>
-                  <p className="text-sm text-slate-400">Pro Plan</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-white font-medium">{invoice.amount}</p>
-                  <Badge variant="success" className="text-xs mt-1">
-                    {invoice.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-          <Button variant="outline" className="w-full mt-4">
-            Download All Invoices
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* Payment Method */}
-      <Card className="bg-slate-900/50 border-slate-800">
-        <CardHeader>
-          <CardTitle>Payment Method</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="p-4 bg-slate-900/30 rounded-lg border border-slate-800">
-            <p className="text-sm text-slate-400 mb-2">Visa Card ending in</p>
-            <p className="text-white font-medium">•••• •••• •••• 4242</p>
-            <p className="text-xs text-slate-500 mt-2">Expires 12/25</p>
-          </div>
-          <Button variant="outline">Update Payment Method</Button>
+      {/* Stripe Integration Note */}
+      <Card className="bg-primary/5 border-primary/20">
+        <CardContent className="pt-6">
+          <h3 className="font-semibold text-primary mb-2">Stripe Integration</h3>
+          <p className="text-sm text-slate-300 mb-2">
+            Plan upgrades and payment processing are handled through Stripe. To enable billing:
+          </p>
+          <ul className="text-sm text-slate-400 space-y-1 list-disc list-inside">
+            <li>Set <code className="text-xs bg-slate-900 px-1 rounded">STRIPE_SECRET_KEY</code> in your .env</li>
+            <li>Set <code className="text-xs bg-slate-900 px-1 rounded">STRIPE_WEBHOOK_SECRET</code> for subscription events</li>
+            <li>Configure price IDs for each plan tier</li>
+          </ul>
         </CardContent>
       </Card>
 
@@ -229,27 +227,15 @@ export default function BillingPage() {
         <CardContent className="space-y-6">
           <div>
             <h4 className="font-medium text-white mb-2">Can I change plans anytime?</h4>
-            <p className="text-sm text-slate-400">
-              Yes, you can upgrade or downgrade your plan at any time. Changes take effect at the start of your next billing cycle.
-            </p>
+            <p className="text-sm text-slate-400">Yes. Upgrades take effect immediately. Downgrades apply at the next billing cycle.</p>
           </div>
           <div>
             <h4 className="font-medium text-white mb-2">What happens when I exceed my device limit?</h4>
-            <p className="text-sm text-slate-400">
-              You'll be notified before reaching the limit. You can either upgrade to a higher plan or temporarily disable devices.
-            </p>
+            <p className="text-sm text-slate-400">You cannot add new devices beyond your limit. Upgrade your plan or remove existing devices.</p>
           </div>
           <div>
-            <h4 className="font-medium text-white mb-2">Do you offer discounts for annual billing?</h4>
-            <p className="text-sm text-slate-400">
-              Yes! Annual plans get 20% off. Contact our sales team for details.
-            </p>
-          </div>
-          <div>
-            <h4 className="font-medium text-white mb-2">Can I cancel my subscription?</h4>
-            <p className="text-sm text-slate-400">
-              You can cancel anytime. Your access continues until the end of your current billing period.
-            </p>
+            <h4 className="font-medium text-white mb-2">Is there a free trial?</h4>
+            <p className="text-sm text-slate-400">The Free plan is always available with 3 devices and 1 GB storage. No credit card required.</p>
           </div>
         </CardContent>
       </Card>
