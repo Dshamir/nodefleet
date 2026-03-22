@@ -43,6 +43,7 @@ interface Device {
   name: string;
   hwModel: string;
   serialNumber: string;
+  pairingCode: string | null;
   status: "online" | "offline" | "pairing" | "disabled";
   firmwareVersion: string | null;
   lastHeartbeatAt: string | null;
@@ -50,6 +51,11 @@ interface Device {
   fleetId: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
+}
+
+interface FleetInfo {
+  id: string;
+  name: string;
 }
 
 interface TelemetryRecord {
@@ -133,8 +139,11 @@ export default function DeviceDetailPage() {
   const [gps, setGps] = useState<GpsRecord[]>([]);
   const [commands, setCommands] = useState<CommandRecord[]>([]);
 
+  const [fleets, setFleets] = useState<FleetInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatingFleet, setUpdatingFleet] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   // Command form
   const [commandType, setCommandType] = useState("capture_photo");
@@ -185,13 +194,54 @@ export default function DeviceDetailPage() {
     }
   }, [deviceId]);
 
+  const fetchFleets = useCallback(async () => {
+    try {
+      const res = await fetch("/api/fleets");
+      if (!res.ok) return;
+      const json = await res.json();
+      setFleets((json.data || []).map((f: FleetInfo) => ({ id: f.id, name: f.name })));
+    } catch {}
+  }, []);
+
   useEffect(() => {
+    fetchFleets();
     fetchDevice().then(() => {
-      // After initial load, fetch extended telemetry & GPS
       fetchTelemetry();
       fetchGps();
     });
-  }, [fetchDevice, fetchTelemetry, fetchGps]);
+  }, [fetchDevice, fetchTelemetry, fetchGps, fetchFleets]);
+
+  async function handleChangeFleet(fleetId: string) {
+    setUpdatingFleet(true);
+    try {
+      const res = await fetch(`/api/devices/${deviceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fleetId: fleetId === "none" ? null : fleetId }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDevice((prev) => prev ? { ...prev, fleetId: updated.fleetId } : prev);
+      }
+    } catch {}
+    finally { setUpdatingFleet(false); }
+  }
+
+  async function handleRegeneratePairingCode() {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/devices/${deviceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ regeneratePairingCode: true }),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDevice((prev) => prev ? { ...prev, pairingCode: updated.pairingCode, status: updated.status } : prev);
+      }
+    } catch {}
+    finally { setRegenerating(false); }
+  }
 
   // ------ Send Command ------
 
@@ -388,7 +438,33 @@ export default function DeviceDetailPage() {
                   label="Firmware Version"
                   value={device.firmwareVersion || "N/A"}
                 />
-                <InfoField label="Fleet ID" value={device.fleetId || "None"} />
+                <div>
+                  <p className="text-sm text-slate-400 mb-1">Fleet</p>
+                  <Select value={device.fleetId || "none"} onValueChange={handleChangeFleet} disabled={updatingFleet}>
+                    <SelectTrigger className="bg-slate-800 border-slate-700 text-white h-9 w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                      <SelectItem value="none">No Fleet</SelectItem>
+                      {fleets.map((f) => (
+                        <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <p className="text-sm text-slate-400 mb-1">Pairing Code</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-white font-mono font-medium tracking-wider">{device.pairingCode || "—"}</code>
+                    <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleRegeneratePairingCode} disabled={regenerating}>
+                      {regenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                      New Code
+                    </Button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {device.status === "pairing" ? "Waiting for device to pair (24hr expiry)" : "Generate new code to re-pair"}
+                  </p>
+                </div>
                 <InfoField
                   label="Last Heartbeat"
                   value={formatRelativeTime(device.lastHeartbeatAt)}
