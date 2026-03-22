@@ -38,6 +38,13 @@ docker compose up -d
 # Visit http://localhost:8888
 ```
 
+After the services are running:
+
+1. Log in with the default credentials (see below) or register a new account.
+2. **Create a device** in the dashboard -- enter a name, hardware model, and serial number. You will receive a 6-character pairing code valid for 24 hours.
+3. **Pair your ESP32** by calling `POST /api/devices/pair` with `{"pairingCode":"XXXXXX"}`. The response contains a JWT `token` and `wsUrl`.
+4. The ESP32 uses the token to connect via WebSocket (`ws://<server>:8081/device?token=...`). The device appears online in the dashboard.
+
 ## Port Mappings
 
 | Service        | Host Port | Description              |

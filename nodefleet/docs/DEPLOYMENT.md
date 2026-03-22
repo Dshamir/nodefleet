@@ -120,6 +120,82 @@ docker exec -i nodefleet-postgres psql -U nodefleet -d nodefleet -c "DELETE FROM
 
 ---
 
+## Verifying the Setup
+
+After starting all services and seeding the database, run these curl commands to verify the server is working end-to-end before connecting real hardware.
+
+### 1. Login and get a session cookie
+
+```bash
+CSRF=$(curl -s http://localhost:8888/api/auth/csrf | jq -r '.csrfToken')
+
+curl -s -X POST http://localhost:8888/api/auth/callback/credentials \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "email=test@nodefleet.io&password=test1234&csrfToken=${CSRF}" \
+  -c cookies.txt -o /dev/null -w "%{http_code}\n"
+# Expected: 302 (redirect on success)
+```
+
+### 2. Create a device
+
+```bash
+curl -s -X POST http://localhost:8888/api/devices \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "name": "Test Device",
+    "hwModel": "ESP32-S3",
+    "serialNumber": "VERIFY-001"
+  }' | jq
+# Expected: 201 with pairingCode (6 characters, expires in 24 hours)
+```
+
+Save the returned `id` and `pairingCode` for the next steps.
+
+### 3. Pair the device
+
+```bash
+curl -s -X POST http://localhost:8888/api/devices/pair \
+  -H "Content-Type: application/json" \
+  -d '{"pairingCode":"<CODE_FROM_STEP_2>"}' | jq
+# Expected: 200 with token, deviceId, orgId, wsUrl
+```
+
+### 4. Create a schedule
+
+```bash
+curl -s -X POST http://localhost:8888/api/schedules \
+  -H "Content-Type: application/json" \
+  -b cookies.txt \
+  -d '{
+    "name": "Verify Schedule",
+    "repeatType": "ONCE",
+    "items": [
+      { "command": "capture_photo", "orderIndex": 0 }
+    ],
+    "deviceIds": ["<DEVICE_ID_FROM_STEP_2>"]
+  }' | jq
+# Expected: 201 with created schedule object
+```
+
+### 5. Clean up
+
+```bash
+# Delete the schedule
+curl -s -X DELETE http://localhost:8888/api/schedules/<SCHEDULE_ID> \
+  -b cookies.txt -w "%{http_code}\n"
+# Expected: 204
+
+# Delete the device
+curl -s -X DELETE http://localhost:8888/api/devices/<DEVICE_ID> \
+  -b cookies.txt -w "%{http_code}\n"
+# Expected: 204
+```
+
+If all commands return the expected status codes, the server is ready for real hardware.
+
+---
+
 ## Port Mapping
 
 The Docker Compose configuration remaps default service ports to avoid conflicts with locally running instances:

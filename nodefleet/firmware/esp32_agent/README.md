@@ -192,18 +192,20 @@ Option B: Send via serial command
 ```json
 POST /api/devices/pair
 {
-  "pairing_code": "ABC123",
-  "device_model": "Waveshare-ESP32-S3-SIM7670G",
-  "firmware_version": "1.0.0"
+  "pairingCode": "ABC123"
 }
 ```
+
+The pairing code is the 6-character code returned when the device was created in the dashboard. It expires 24 hours after creation.
 
 **Response:**
 ```json
 {
-  "device_token": "eyJhbGc...",
-  "device_id": "dev_12345",
-  "ws_url": "wss://server.com/device"
+  "token": "eyJhbGc...",
+  "deviceId": "clx...",
+  "orgId": "clx...",
+  "deviceName": "Lobby Display",
+  "wsUrl": "ws://server.com:8081"
 }
 ```
 

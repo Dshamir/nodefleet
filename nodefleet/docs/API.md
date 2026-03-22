@@ -245,11 +245,13 @@ POST /api/devices
 
 **Content-Type:** `application/json`
 
-| Field        | Type   | Required | Description           |
-|--------------|--------|----------|-----------------------|
-| name         | string | Yes      | Device display name   |
-| hwModel      | string | Yes      | Hardware model        |
-| serialNumber | string | Yes      | Unique serial number  |
+| Field           | Type   | Required | Description                        |
+|-----------------|--------|----------|------------------------------------|
+| name            | string | Yes      | Device display name                |
+| hwModel         | string | Yes      | Hardware model                     |
+| serialNumber    | string | Yes      | Unique serial number (checked for uniqueness; returns 409 if duplicate) |
+| fleetId         | string | No       | Fleet ID to assign the device to   |
+| firmwareVersion | string | No       | Initial firmware version string    |
 
 **Response (201):**
 
@@ -259,7 +261,8 @@ POST /api/devices
   "name": "Lobby Display",
   "hwModel": "RPi4",
   "serialNumber": "SN-001",
-  "pairingCode": "ABCD-1234",
+  "pairingCode": "A1B2C3",
+  "pairingCodeExpiresAt": "2026-03-22T12:00:00.000Z",
   "status": "PENDING"
 }
 ```
@@ -329,11 +332,14 @@ POST /api/devices/pair
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIs...",
-  "deviceId": "clx..."
+  "deviceId": "clx...",
+  "orgId": "clx...",
+  "deviceName": "Lobby Display",
+  "wsUrl": "ws://localhost:8081"
 }
 ```
 
-The returned JWT token is used for subsequent device-to-server communication (heartbeat, etc.).
+The pairing code expires 24 hours after device creation. If expired, the server returns `410 Gone`. On success the device status is set to `"online"` and the token is stored in the `device_tokens` table. The returned JWT (valid for 365 days) is used for subsequent device-to-server communication (heartbeat, WebSocket connection, etc.).
 
 ### Submit Telemetry (Heartbeat)
 
@@ -589,11 +595,21 @@ POST /api/schedules
 |----------------|----------|----------|------------------------------------|
 | name           | string   | Yes      | Schedule name                      |
 | description    | string   | No       | Schedule description               |
-| cronExpression | string   | Yes      | Cron expression for timing         |
+| cronExpression | string   | No       | Cron expression for timing (e.g., `0 8 * * *`) |
 | repeatType     | string   | Yes      | ONCE, DAILY, WEEKLY, MONTHLY       |
+| isActive       | boolean  | No       | Whether the schedule is active (default `true`) |
 | conditions     | object   | No       | Execution conditions JSONB (e.g., `{ "batteryBelow": 20, "tempAbove": 60 }`). Task only executes when all conditions are met. |
-| items          | array    | Yes      | Array of content IDs and durations |
+| items          | array    | Yes      | Array of schedule item objects (see below) |
 | deviceIds      | string[] | Yes      | Array of device IDs to assign      |
+
+**Schedule Item Object:**
+
+| Field           | Type   | Required | Description                                                                 |
+|-----------------|--------|----------|-----------------------------------------------------------------------------|
+| command         | string | Yes      | Command enum: `capture_photo`, `capture_video`, `record_audio`, `stream_video`, `reboot`, `update_firmware`, `custom` |
+| commandPayload  | object | No       | Additional data for the command (e.g., `{ "url": "https://..." }` for `update_firmware`) |
+| orderIndex      | number | Yes      | Execution order (0-based)                                                   |
+| durationSeconds | number | No       | Duration in seconds for timed commands (e.g., video recording length)       |
 
 **Response (201):** Created schedule object with items and assignments.
 
@@ -613,11 +629,14 @@ Returns the schedule with its items and device assignments.
   "name": "Morning Rotation",
   "cronExpression": "0 8 * * *",
   "repeatType": "DAILY",
+  "isActive": true,
+  "conditions": { "batteryBelow": 20 },
   "items": [
     {
-      "contentId": "clx...",
-      "duration": 30,
-      "order": 1
+      "command": "capture_photo",
+      "commandPayload": {},
+      "orderIndex": 0,
+      "durationSeconds": null
     }
   ],
   "devices": [
@@ -964,6 +983,32 @@ curl -s -X POST http://localhost:8888/api/devices/DEVICE_ID/command \
 ```
 
 Replace `DEVICE_ID` with the actual device ID returned from the create or list endpoints.
+
+### Full Device Pairing Flow
+
+This is the complete end-to-end pairing sequence:
+
+```
+1. Dashboard user: Add Device
+   POST /api/devices  { "name": "...", "hwModel": "...", "serialNumber": "..." }
+   → Server returns 6-character pairingCode (e.g., "A1B2C3") valid for 24 hours
+   → Serial number must be unique (409 if duplicate)
+
+2. ESP32 device: Call Pair API
+   POST /api/devices/pair  { "pairingCode": "A1B2C3" }
+   → Server checks code exists and has not expired (410 if expired)
+   → Server sets device status to "online"
+   → Server generates JWT token (365 days) and stores it in device_tokens table
+   → Returns: { "token": "eyJ...", "deviceId": "...", "orgId": "...", "wsUrl": "ws://..." }
+
+3. ESP32 device: Connect WebSocket
+   ws://<server>:8081/device?token=eyJ...
+   → Device is now online and appears on the dashboard
+
+4. ESP32 device: Send heartbeats and telemetry
+   → Heartbeats keep the device marked as "online"
+   → GPS, battery, signal data appears in the dashboard
+```
 
 ---
 

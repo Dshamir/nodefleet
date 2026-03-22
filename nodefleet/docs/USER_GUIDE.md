@@ -71,11 +71,17 @@ Create and manage automated tasks that run on cron schedules. Full CRUD support:
 
 **Conditional execution:** Schedules support a `conditions` field that gates task execution. For example, set `batteryBelow: 20` to only run the task when the device battery is below 20%, or `tempAbove: 60` to trigger when CPU temperature exceeds 60 degrees C. Tasks only execute when all specified conditions are met.
 
-Supported task types:
+Supported command types (used in schedule items):
 
-- Capture photo
-- Record audio
-- Reboot device
+- `capture_photo` -- Take a photo with the device camera
+- `capture_video` -- Record a video clip
+- `record_audio` -- Record an audio clip
+- `stream_video` -- Start a live video stream
+- `reboot` -- Restart the device
+- `update_firmware` -- Push a firmware update
+- `custom` -- Send a custom command with an arbitrary payload
+
+Each schedule item specifies a `command`, an optional `commandPayload`, an `orderIndex` (execution order), and an optional `durationSeconds`.
 
 Each schedule is assigned to one or more devices and runs according to the configured cron expression.
 
@@ -162,9 +168,12 @@ The seed data includes 3 demo fleets:
 ### Adding a Device
 
 1. Click **"Add Device"** on the Devices page.
-2. Enter the device name, model, and serial number.
-3. A pairing code is generated and displayed (6 characters, valid for 24 hours).
-4. Use this pairing code to connect your physical device.
+2. Fill in the required fields:
+   - **Name** -- A display name for the device (e.g., "Lobby Camera").
+   - **Hardware Model** (`hwModel`) -- The hardware model string (e.g., "ESP32-S3", "ESP32-CAM").
+   - **Serial Number** (`serialNumber`) -- A unique serial number. The server rejects duplicates with a 409 error.
+3. Optionally select a **Fleet** and enter a **Firmware Version**.
+4. A 6-character pairing code is generated and displayed (valid for 24 hours). Copy this code -- you will need it for the ESP32 device.
 
 ### Editing a Device
 
@@ -176,10 +185,20 @@ From the device list or detail page, click the delete button. A confirmation dia
 
 ### Device Pairing
 
-1. Flash the ESP32 firmware with the pairing code.
-2. The device calls `/api/devices/pair` with the pairing code.
-3. The server returns a JWT token for the device.
-4. The device uses the JWT to connect via WebSocket for real-time communication.
+The complete pairing flow has three steps:
+
+**Step 1: Add device in the dashboard**
+- Create the device as described above. You receive a 6-character pairing code (e.g., `A1B2C3`) that expires in 24 hours.
+
+**Step 2: ESP32 calls the Pair API**
+- The ESP32 firmware sends `POST /api/devices/pair` with `{"pairingCode":"A1B2C3"}`.
+- The server verifies the code, sets the device status to `"online"`, and returns a JWT token (valid 365 days), the `deviceId`, `orgId`, and `wsUrl`.
+- The token is stored in the `device_tokens` table on the server and in NVS on the ESP32.
+
+**Step 3: ESP32 connects via WebSocket**
+- Using the `wsUrl` and `token` from the pair response, the ESP32 opens a WebSocket connection: `ws://<server>:8081/device?token=eyJ...`
+- The device is now online and visible on the dashboard.
+- The ESP32 sends periodic heartbeats, GPS coordinates, and telemetry data which appear in the device detail page.
 
 ### Device Auto-Discovery
 

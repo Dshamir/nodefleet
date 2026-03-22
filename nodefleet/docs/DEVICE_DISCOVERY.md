@@ -1,5 +1,7 @@
 # NodeFleet Device Auto-Discovery
 
+> **Important:** Discovery only locates the server URL. After discovery, the ESP32 must call `POST /api/devices/pair` with its 6-character pairing code to obtain a JWT token before connecting via WebSocket. Without a valid token, the WebSocket connection will be rejected. See the [API reference](API.md#pair-device) for the full pairing flow.
+
 ESP32 devices can automatically find the NodeFleet server on the local network without hardcoding IP addresses. Two discovery protocols are supported and run simultaneously.
 
 ## Protocol 1: UDP Broadcast Discovery
