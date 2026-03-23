@@ -1,0 +1,178 @@
+================================================================================
+NodeFleet ESP32 Agent - Pre-Compilation Checklist
+================================================================================
+
+Before uploading firmware, verify the following:
+
+HARDWARE SETUP:
+[ ] ESP32-S3 board connected to computer via USB
+[ ] USB cable is data-capable (not power-only)
+[ ] No other applications using the serial port
+[ ] Board is not in reset/boot mode
+[ ] External power supply connected (if using battery)
+
+ARDUINO IDE CONFIGURATION:
+[ ] Arduino IDE is latest version
+[ ] ESP32 board support package installed (v2.0.8+)
+[ ] Required libraries installed:
+    [ ] ArduinoJson (6.19.x or later)
+    [ ] WebSocketsClient (optional, for advanced WebSocket)
+    
+BOARD SETTINGS:
+[ ] Tools → Board: "ESP32S3 Dev Module"
+[ ] Tools → Port: Correct COM port selected
+[ ] Tools → Flash Size: "16MB"
+[ ] Tools → Flash Mode: "QIO"
+[ ] Tools → Flash Frequency: "80MHz"
+[ ] Tools → CPU Frequency: "240MHz"
+[ ] Tools → USB CDC on Boot: "Enabled"
+[ ] Tools → Core Debug Level: "Verbose"
+[ ] Tools → Upload Speed: "921600"
+
+FIRMWARE CONFIGURATION (config.h):
+[ ] WIFI_SSID is set to your network name
+[ ] WIFI_PASSWORD is correct
+[ ] SERVER_HOST is set to your NodeFleet server
+[ ] SERVER_PORT matches your server (usually 443 for HTTPS)
+[ ] PAIRING_CODE is provided by NodeFleet admin
+[ ] MODEM_RX_PIN and MODEM_TX_PIN match hardware
+[ ] STATUS_LED_PIN is correct for your board
+[ ] SD_* pins are correct (if using SD card)
+
+FEATURE FLAGS (config.h):
+[ ] USE_WIFI: 1 (to enable WiFi)
+[ ] USE_4G: 1 (to enable 4G modem)
+[ ] ENABLE_CAMERA: 1 if camera present, else 0
+[ ] ENABLE_GPS: 1 (built into SIM7670G)
+[ ] ENABLE_SD_CARD: 1 if SD card present, else 0
+[ ] ENABLE_WATCHDOG: 1 (recommended)
+[ ] DEBUG_SERIAL: 1 (for troubleshooting)
+[ ] DEBUG_LEVEL: 2 or 3 (for detailed logs)
+
+CODE INTEGRITY:
+[ ] All #include statements in esp32_agent.ino match actual files
+[ ] No syntax errors shown in Arduino IDE
+[ ] Sketch compiles successfully (Ctrl+R)
+[ ] No missing library warnings
+
+SERIAL MONITOR:
+[ ] Serial Monitor baud rate set to 115200
+[ ] Line ending set to "Newline"
+[ ] Monitor ready before upload
+
+SAFETY:
+[ ] No loose wires that could short
+[ ] No water or liquid near hardware
+[ ] USB port is stable and secure
+[ ] Board is on non-conductive surface (not metal)
+
+================================================================================
+COMPILATION STEPS:
+================================================================================
+
+1. Open esp32_agent.ino in Arduino IDE
+2. Verify all settings above are correct
+3. Click Verify (Ctrl+R) - should complete without errors
+4. Review console output for any warnings
+5. Connect board via USB
+6. Click Upload (Ctrl+U)
+7. Watch for:
+   "Leaving... Hard resetting via RTS pin"
+   "Hash of data verified"
+8. Open Serial Monitor (Ctrl+Shift+M)
+9. Watch boot sequence in monitor
+10. Verify "Setup complete, entering main loop" message
+
+================================================================================
+EXPECTED BOOT SEQUENCE:
+================================================================================
+
+[After upload completes and board reboots, you should see:]
+
+===============================================
+NodeFleet ESP32 Agent Booting
+Firmware Version: 1.0.0
+Device Model: Waveshare-ESP32-S3-SIM7670G
+===============================================
+Initializing hardware
+Initializing WiFi
+Connecting to WiFi: YOUR_SSID
+.................
+WiFi connected! IP: 192.168.x.x
+[INFO] Initializing SIM7670G modem...
+[INFO] Modem responding: OK
+[INFO] SIM detected
+[INFO] Modem initialized successfully
+[INFO] Attempting device pairing with code: YOUR_CODE
+[INFO] Device paired successfully! Token: eyJhbGc...
+[INFO] WebSocket connected
+[INFO] Setup complete, entering main loop
+[VERBOSE] Heartbeat sent (battery: 4.15V, signal: -95, heap: 65536 bytes)
+
+================================================================================
+TROUBLESHOOTING:
+================================================================================
+
+UPLOAD FAILS:
+- Check COM port selection
+- Try different USB cable
+- Hold BOOT button while uploading (hold GPIO0 to ground)
+- Try lower upload speed (115200 instead of 921600)
+
+BOARD NOT RECOGNIZED:
+- Install CH340 driver (for serial chip on board)
+- Try different USB port
+- Check Device Manager for unknown devices
+
+MODEM NOT RESPONDING:
+- Verify MODEM_RX_PIN (GPIO9) and MODEM_TX_PIN (GPIO8) are correct
+- Check UART connections with multimeter
+- Ensure modem is powered (MODEM_POWER_PIN high)
+- Check baud rate is 115200
+
+WIFI FAILS TO CONNECT:
+- Verify SSID has no special characters
+- Check WiFi is 2.4GHz (not 5GHz)
+- Verify password is correct
+- Ensure WiFi is broadcasting SSID
+
+PAIRING FAILS:
+- Verify SERVER_HOST is reachable (ping from computer)
+- Check PAIRING_CODE is correct
+- Ensure HTTPS cert is valid
+- Verify SERVER_PORT (usually 443)
+
+SERIAL MONITOR SHOWS NOTHING:
+- Check USB cable (should show as COM port)
+- Verify baud rate is 115200
+- Try unplugging and re-plugging USB
+- Try different USB port on computer
+
+================================================================================
+FILES INCLUDED:
+================================================================================
+
+esp32_agent.ino              - Main sketch with setup() and loop()
+config.h                     - Configuration header (customize this!)
+modem.h / modem.cpp         - SIM7670G modem driver
+camera.h / camera.cpp       - Camera interface
+storage.h / storage.cpp     - SD card & NVS storage manager
+websocket_client.h / .cpp   - WebSocket client implementation
+README.md                    - Full documentation
+QUICK_START.md              - Quick start guide
+COMPILATION_CHECKLIST.txt   - This file
+
+================================================================================
+AFTER SUCCESSFUL COMPILATION:
+================================================================================
+
+1. Check Serial Monitor for boot messages (see above)
+2. Verify "Setup complete, entering main loop"
+3. In your NodeFleet dashboard, find the newly paired device
+4. Send a test command: {"command": "get_status"}
+5. Check Serial Monitor for command processing
+6. Verify response in dashboard
+
+If all steps pass, firmware is working correctly!
+
+================================================================================

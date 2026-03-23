@@ -1,0 +1,156 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: nodefleet-postgres
+    environment:
+      POSTGRES_USER: nodefleet
+      POSTGRES_PASSWORD: nodefleet
+      POSTGRES_DB: nodefleet
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - nodefleet-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nodefleet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nodefleet-redis
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - nodefleet-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    container_name: nodefleet-minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/minio_data
+    networks:
+      - nodefleet-net
+    command: server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: nodefleet-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - nodefleet-net
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/nodefleet-media --ignore-existing;
+      exit 0;
+      "
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: nodefleet-web
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "3002:3000"
+    networks:
+      - nodefleet-net
+    environment:
+      PORT: 3000
+      HOSTNAME: 0.0.0.0
+      AUTH_URL: http://localhost:8888
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ws-server:
+    build:
+      context: ./ws-server
+      dockerfile: Dockerfile
+    container_name: nodefleet-ws
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    ports:
+      - "8081:8080"
+      - "5555:5555/udp"
+    networks:
+      - nodefleet-net
+    environment:
+      PORT: 8080
+      WS_PORT: 8080
+      UDP_DISCOVERY_PORT: 5555
+      HTTP_PORT: 8888
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ENABLE_DISCOVERY: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nodefleet-nginx
+    depends_on:
+      - web
+      - ws-server
+    ports:
+      - "8888:80"
+      - "8443:443"
+    networks:
+      - nodefleet-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+
+networks:
+  nodefleet-net:
+    driver: bridge
