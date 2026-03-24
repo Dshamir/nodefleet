@@ -1,21 +1,30 @@
 # NodeFleet API Routes Summary
 
 ## Overview
-Complete Next.js API routes for the device fleet management platform. All routes implement production-grade error handling, authentication, authorization, and database operations using Drizzle ORM.
+Complete Next.js API routes for the device fleet management platform (28 endpoints). All routes implement production-grade error handling, authentication, authorization, and database operations using Drizzle ORM.
 
 ## Created Routes
 
-### Authentication
-- **POST /api/auth/[...nextauth]/route.ts**
+### Authentication (5 routes)
+- **GET/POST /api/auth/[...nextauth]/route.ts**
   - Exports NextAuth handlers (GET, POST)
   - Delegates to auth configuration
+
+- **PATCH /api/auth/profile/route.ts**
+  - Update user profile (name, email)
+
+- **POST /api/auth/change-password/route.ts**
+  - Change password (requires current password verification)
+
+- **DELETE /api/auth/delete-account/route.ts**
+  - Delete user account (requires password confirmation)
 
 ### Device Management (11 routes)
 
 #### Core Device Routes
 1. **GET/POST /api/devices/route.ts**
    - GET: List org devices with pagination, search, and status filtering
-   - POST: Create new device, generates pairing code (15-min expiry)
+   - POST: Create new device, generates pairing code (24-hour expiry)
    - Pagination: page, limit, total, pages
 
 2. **GET/PATCH/DELETE /api/devices/[id]/route.ts**
@@ -25,7 +34,7 @@ Complete Next.js API routes for the device fleet management platform. All routes
 
 #### Device Pairing & Communication
 3. **POST /api/devices/pair/route.ts**
-   - Validates pairing code (15-min window expiry check)
+   - Validates pairing code (24-hour window expiry check)
    - Generates device JWT token (365-day expiry)
    - Marks device as "paired", clears pairing code
    - Returns: deviceId, deviceToken, expiresIn
@@ -94,9 +103,45 @@ Complete Next.js API routes for the device fleet management platform. All routes
     - Creates: user, organization, orgMember (owner role)
     - Returns user and org details
 
+### Fleets (2 routes)
+
+14. **GET/POST /api/fleets/route.ts**
+    - GET: List org fleets
+    - POST: Create fleet with name, description, location, lat/lng
+
+15. **GET/PATCH/DELETE /api/fleets/[id]/route.ts**
+    - GET: Fleet details
+    - PATCH: Update fleet fields
+    - DELETE: Remove fleet
+
+### Organization (1 route)
+
+16. **GET/PATCH /api/org/route.ts**
+    - GET: Organization details
+    - PATCH: Update organization name/settings
+
+### API Keys (2 routes)
+
+17. **GET/POST /api/keys/route.ts**
+    - GET: List API keys for the user
+    - POST: Generate a new API key
+
+18. **DELETE /api/keys/[id]/route.ts**
+    - Revoke (delete) an API key
+
+### Dashboard (1 route)
+
+19. **GET /api/dashboard/stats/route.ts**
+    - Returns dashboard statistics (device counts, media counts, etc.)
+
+### Discovery (1 route)
+
+20. **GET /api/discovery/route.ts**
+    - Network device scan (UDP broadcast on port 5556, ws-server discovery on port 5555)
+
 ### Webhooks
 
-14. **POST /api/webhooks/stripe/route.ts**
+21. **POST /api/webhooks/stripe/route.ts**
     - Handles: checkout.session.completed, customer.subscription.updated, customer.subscription.deleted
     - Verifies webhook signature
     - Updates org subscription info

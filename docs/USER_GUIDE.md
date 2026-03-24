@@ -152,17 +152,24 @@ View your current subscription plan and upgrade to a higher tier.
 
 ## Fleet Management
 
-Fleets allow you to group devices by physical location. Each fleet has a name, description, location label, and GPS coordinates (latitude/longitude).
+Fleets allow you to group devices by physical location. Each fleet has a name, description, location label, and GPS coordinates (latitude/longitude). Fleets are managed via the `/api/fleets` endpoint (there is no dedicated fleet management page yet).
+
+### Dashboard Integration
+
+- On the `/devices` page, each device row shows its fleet name in the table. A **fleet filter dropdown** lets you narrow the device list to a specific fleet.
+- On the **device detail page**, the fleet is displayed as a dropdown that can be changed inline -- select a different fleet to reassign the device without leaving the page.
 
 ### Creating a Fleet
 
-1. Navigate to the Fleets section.
-2. Click **"Create Fleet"** and enter a name, description, and location.
-3. Optionally set latitude and longitude for map display.
+Fleets are created via the API: `POST /api/fleets` with a JSON body containing:
+- `name` (required) -- Display name for the fleet.
+- `description` (optional) -- A short description of the fleet's purpose.
+- `location` (optional) -- A human-readable location label (e.g., "San Francisco, CA").
+- `lat` / `lng` (optional) -- GPS coordinates for map display.
 
 ### Assigning Devices to a Fleet
 
-Devices have a `fleet_id` field. When creating or editing a device, select which fleet it belongs to. Filter the device list by fleet to see only devices at a specific location.
+To assign a device to a fleet, send `PATCH /api/devices/[id]` with `{"fleetId": "<fleet-id>"}`. On the device detail page, this is done via the fleet dropdown -- select a fleet and the assignment is saved inline. On the `/devices` page, use the fleet filter dropdown to see only devices at a specific location.
 
 ### Demo Fleets
 

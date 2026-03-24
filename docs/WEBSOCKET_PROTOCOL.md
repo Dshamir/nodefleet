@@ -8,12 +8,12 @@ This document describes the WebSocket protocol used for real-time communication 
 
 ### Endpoints
 
-| Client    | Endpoint                          |
-|-----------|-----------------------------------|
-| Device    | `ws://host/ws/device?token=JWT`   |
-| Dashboard | `ws://host/ws/dashboard?token=JWT`|
+| Client    | Endpoint                              |
+|-----------|---------------------------------------|
+| Device    | `ws://host:8081/device?token=JWT`     |
+| Dashboard | `ws://host:8081/dashboard?token=JWT`  |
 
-Both endpoints are served through nginx, which proxies WebSocket connections to `ws-server:8080`.
+The ws-server listens directly at `/device` and `/dashboard` paths on port 8081 (no `/ws/` prefix). Nginx proxies the `/ws` path to ws-server, so `ws://host:8888/ws` also works for device connections.
 
 ### Authentication
 
@@ -268,7 +268,7 @@ Replace `{deviceId}` with the actual device identifier (e.g., `device:device-789
 
 ### Device Connection
 
-1. Device opens a WebSocket connection to `ws://host/ws/device?token=JWT`.
+1. Device opens a WebSocket connection to `ws://host:8081/device?token=JWT`.
 2. Server validates the JWT token.
 3. Server registers the device in the internal connections map.
 4. Server starts a heartbeat timer for the device:
@@ -278,7 +278,7 @@ Replace `{deviceId}` with the actual device identifier (e.g., `device:device-789
 
 ### Dashboard Connection
 
-1. Dashboard client opens a WebSocket connection to `ws://host/ws/dashboard?token=JWT`.
+1. Dashboard client opens a WebSocket connection to `ws://host:8081/dashboard?token=JWT`.
 2. Server validates the JWT token.
 3. Dashboard can subscribe to one or more device channels using `subscribe_device` messages.
 4. Server forwards relevant device updates to subscribed dashboard clients.
