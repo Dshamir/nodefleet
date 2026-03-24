@@ -78,6 +78,7 @@ const LeadScoringPage = lazy(() => import('./pages/lead-scoring/LeadScoringPage'
 
 // Lazy-loaded pages — Development
 const RepairPlansPage = lazy(() => import('./pages/repair-plans/RepairPlansPage').then(m => ({ default: m.RepairPlansPage })))
+const AdminProfilePage = lazy(() => import('./pages/profile/AdminProfilePage').then(m => ({ default: m.AdminProfilePage })))
 
 // Lazy-loaded pages — Medical
 const PatientsPage = lazy(() => import('./pages/patients/PatientsPage').then(m => ({ default: m.PatientsPage })))
@@ -203,6 +204,7 @@ function App() {
             <Route element={<AdminLayout />}>
             {/* Dashboard */}
             <Route index element={<DashboardPage />} />
+            <Route path="profile" element={<AdminProfilePage />} />
 
             {/* Platform */}
             <Route path="tenants" element={<TenantsPage />} />

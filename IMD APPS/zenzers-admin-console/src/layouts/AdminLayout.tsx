@@ -1,8 +1,10 @@
-import { useState } from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
 import { useAdminAuth } from '@/auth/useAdminAuth'
 import { ThemeSwitcher } from '@/components/ThemeSwitcher'
+import { ChangePasswordDialog } from '@/components/ChangePasswordDialog'
+import { adminApi, AdminProfile } from '@/api/admin'
 
 interface NavItem {
   label: string
@@ -141,8 +143,41 @@ const navigation: NavSection[] = [
 
 export function AdminLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [profile, setProfile] = useState<AdminProfile | null>(null)
+  const userMenuRef = useRef<HTMLDivElement>(null)
   const { user, logout } = useAdminAuth()
   const location = useLocation()
+  const navigate = useNavigate()
+
+  // Fetch profile for avatar + name
+  useEffect(() => {
+    adminApi.getProfile().then(setProfile).catch(() => {})
+  }, [])
+
+  // Close user menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) {
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const getInitials = useCallback(() => {
+    const first = profile?.firstName || (user?.profile as any)?.given_name || ''
+    const last = profile?.lastName || (user?.profile as any)?.family_name || ''
+    return ((first[0] || '') + (last[0] || '')).toUpperCase() || 'AD'
+  }, [profile, user])
+
+  const displayName = profile
+    ? [profile.firstName, profile.lastName].filter(Boolean).join(' ') || profile.email
+    : (user?.profile?.email ?? 'Admin')
+
+  const avatarUrl = profile?.avatarKey ? adminApi.getAvatarUrl(profile.avatarKey) : null
 
   const currentPath = location.pathname.replace(/^\/admin\/?/, '').replace(/\/$/, '')
 
@@ -159,7 +194,10 @@ export function AdminLayout() {
         }
       }
     }
-    // Handle parameterized routes
+    // Handle special routes
+    if (currentPath === 'profile') {
+      return [{ label: 'Dashboard', path: '' }, { label: 'My Profile' }]
+    }
     if (currentPath.startsWith('tenants/') && currentPath !== 'tenants/onboard') {
       return [
         { label: 'Dashboard', path: '' },
@@ -284,18 +322,65 @@ export function AdminLayout() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-500">
-              {user?.profile?.email ?? 'Admin'}
-            </span>
+          {/* User Avatar Menu */}
+          <div className="relative" ref={userMenuRef}>
             <button
-              onClick={logout}
-              className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
-              title="Sign out"
+              onClick={() => setUserMenuOpen(!userMenuOpen)}
+              className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-slate-100 transition-colors"
             >
-              <i className="pi pi-sign-out" />
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="w-8 h-8 rounded-full object-cover border border-slate-200" />
+              ) : (
+                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                  {getInitials()}
+                </div>
+              )}
+              <span className="text-sm text-slate-700 hidden sm:inline">{displayName}</span>
+              <i className={clsx('pi text-xs text-slate-400', userMenuOpen ? 'pi-chevron-up' : 'pi-chevron-down')} />
             </button>
+
+            {userMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-slate-200 z-50 py-1">
+                {/* User info header */}
+                <div className="px-4 py-3 border-b border-slate-100">
+                  <p className="text-sm font-semibold text-slate-800">{displayName}</p>
+                  <p className="text-xs text-slate-500">{profile?.email || user?.profile?.email}</p>
+                  <p className="text-xs text-blue-600 mt-0.5">Admin</p>
+                </div>
+
+                <button
+                  onClick={() => { setUserMenuOpen(false); setShowPasswordDialog(true) }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <i className="pi pi-lock text-slate-400" />
+                  Change Password
+                </button>
+
+                <button
+                  onClick={() => { setUserMenuOpen(false); navigate('profile') }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+                >
+                  <i className="pi pi-user text-slate-400" />
+                  My Profile
+                </button>
+
+                <div className="border-t border-slate-100 my-1" />
+
+                <button
+                  onClick={() => { setUserMenuOpen(false); logout() }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <i className="pi pi-sign-out text-red-400" />
+                  Sign Out
+                </button>
+              </div>
+            )}
           </div>
+
+          <ChangePasswordDialog
+            visible={showPasswordDialog}
+            onHide={() => setShowPasswordDialog(false)}
+          />
         </header>
 
         {/* Page content */}
