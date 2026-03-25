@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zenzer Device Emulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0f;
+    color: #e0e0e0;
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .header {
+    text-align: center;
+    padding: 24px 16px 8px;
+  }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #7cb3ff;
+    letter-spacing: 1px;
+  }
+  .header .subtitle {
+    font-size: 12px;
+    color: #666;
+    margin-top: 4px;
+  }
+
+  .devices-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 24px;
+    padding: 20px;
+  }
+
+  /* ── Watch Container ── */
+  .watch-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+  }
+  .watch-label {
+    font-size: 11px;
+    color: #888;
+    letter-spacing: 0.5px;
+  }
+  .watch-profile {
+    font-size: 10px;
+    color: #556;
+    font-style: italic;
+  }
+
+  /* ── Watch Body ── */
+  .watch {
+    width: 200px;
+    height: 240px;
+    background: #1a1a24;
+    border-radius: 40px;
+    border: 3px solid #2a2a3a;
+    position: relative;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px #111,
+      0 8px 32px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+    transition: border-color 0.4s;
+  }
+  .watch.connected {
+    border-color: #2d6a4f;
+    box-shadow:
+      0 0 0 1px #111,
+      0 0 20px rgba(45,106,79,0.15),
+      0 8px 32px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .watch.advertising {
+    border-color: #2a2a3a;
+  }
+
+  /* ── Watch Button (crown) ── */
+  .watch::before {
+    content: '';
+    position: absolute;
+    right: -8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 28px;
+    background: #2a2a3a;
+    border-radius: 3px;
+  }
+
+  /* ── Band hints ── */
+  .watch::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    top: -3px;
+    width: 60px;
+    height: 3px;
+    background: #222;
+    border-radius: 0 0 2px 2px;
+  }
+
+  /* ── Screen ── */
+  .screen {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    background: #0d0d14;
+    border-radius: 28px;
+    padding: 14px 12px 10px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Status Bar ── */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    padding: 0 2px;
+  }
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #333;
+    transition: background 0.4s;
+  }
+  .status-dot.advertising { background: #f59e0b; animation: pulse 2s infinite; }
+  .status-dot.connected { background: #10b981; }
+  .time-display {
+    font-size: 10px;
+    color: #555;
+    font-variant-numeric: tabular-nums;
+  }
+  .battery-display {
+    font-size: 9px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .battery-icon {
+    width: 16px;
+    height: 8px;
+    border: 1px solid #555;
+    border-radius: 2px;
+    position: relative;
+    display: inline-block;
+  }
+  .battery-icon::after {
+    content: '';
+    position: absolute;
+    right: -3px;
+    top: 1px;
+    width: 2px;
+    height: 4px;
+    background: #555;
+    border-radius: 0 1px 1px 0;
+  }
+  .battery-fill {
+    height: 100%;
+    border-radius: 1px;
+    background: #10b981;
+    transition: width 0.5s;
+  }
+  .battery-fill.low { background: #ef4444; }
+
+  /* ── Vitals Grid ── */
+  .vitals-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    gap: 4px 8px;
+    align-items: center;
+  }
+
+  .vital-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .vital-icon {
+    font-size: 12px;
+    margin-bottom: 1px;
+  }
+  .vital-value {
+    font-size: 18px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+    transition: color 0.3s;
+  }
+  .vital-unit {
+    font-size: 8px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* ── Vital Colors ── */
+  .vital-hr .vital-value { color: #ef4444; }
+  .vital-spo2 .vital-value { color: #3b82f6; }
+  .vital-temp .vital-value { color: #f59e0b; }
+  .vital-rr .vital-value { color: #8b5cf6; }
+  .vital-bp .vital-value { color: #ec4899; font-size: 14px; }
+  .vital-bp .vital-unit { font-size: 7px; }
+
+  /* ── Abnormal flash ── */
+  .vital-value.abnormal {
+    animation: flash-red 0.6s ease-in-out;
+  }
+  @keyframes flash-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Fall Alert ── */
+  .fall-alert {
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ef4444;
+    color: white;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 10px;
+    animation: shake 0.5s ease-in-out;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+    z-index: 10;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(-50%) rotate(0); }
+    25% { transform: translateX(-50%) rotate(-3deg); }
+    75% { transform: translateX(-50%) rotate(3deg); }
+  }
+
+  /* ── Waiting state ── */
+  .waiting-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+  }
+  .waiting-screen .ring {
+    width: 36px;
+    height: 36px;
+    border: 2px solid #222;
+    border-top-color: #7cb3ff;
+    border-radius: 50%;
+    animation: spin 1.2s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .waiting-screen .text {
+    font-size: 10px;
+    color: #555;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Pair Button ── */
+  .pair-btn {
+    margin-top: 6px;
+    padding: 4px 16px;
+    font-size: 10px;
+    border: 1px solid #333;
+    border-radius: 12px;
+    background: transparent;
+    color: #7cb3ff;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .pair-btn:hover {
+    background: #7cb3ff;
+    color: #0a0a0f;
+  }
+  .pair-btn.disconnect {
+    color: #ef4444;
+    border-color: #3a2020;
+  }
+  .pair-btn.disconnect:hover {
+    background: #ef4444;
+    color: white;
+  }
+
+  /* ── Connection log ── */
+  .log-panel {
+    max-width: 900px;
+    margin: 16px auto;
+    padding: 0 20px 20px;
+  }
+  .log-panel h3 {
+    font-size: 12px;
+    color: #555;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .log-box {
+    background: #111118;
+    border: 1px solid #1e1e2a;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 11px;
+    color: #6a6a7a;
+    max-height: 140px;
+    overflow-y: auto;
+    line-height: 1.6;
+  }
+  .log-entry.connect { color: #10b981; }
+  .log-entry.disconnect { color: #ef4444; }
+  .log-entry.vitals { color: #444; }
+  .log-entry.fall { color: #f59e0b; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>ZENZER DEVICE EMULATOR</h1>
+  <div class="subtitle" id="status-line">Connecting...</div>
+</div>
+
+<div class="devices-grid" id="devices-grid"></div>
+
+<div class="log-panel">
+  <h3>Event Log</h3>
+  <div class="log-box" id="log-box"></div>
+</div>
+
+<script>
+(function() {
+  const WS_BASE = `ws://${location.host}`;
+  const grid = document.getElementById('devices-grid');
+  const logBox = document.getElementById('log-box');
+  const statusLine = document.getElementById('status-line');
+
+  const devices = {};      // id -> { ws, vitals, state, element }
+  const FALL_TYPES = { 4: 'FORWARD', 5: 'SLIP', 6: 'LATERAL', 7: 'VERTICAL' };
+
+  function log(msg, cls = '') {
+    const ts = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const div = document.createElement('div');
+    div.className = `log-entry ${cls}`;
+    div.textContent = `[${ts}] ${msg}`;
+    logBox.prepend(div);
+    if (logBox.children.length > 100) logBox.lastChild.remove();
+  }
+
+  function createWatchElement(id, name, profile) {
+    const container = document.createElement('div');
+    container.className = 'watch-container';
+    container.innerHTML = `
+      <div class="watch-label">${name}</div>
+      <div class="watch advertising" id="watch-${id}">
+        <div class="screen">
+          <div class="status-bar">
+            <div class="status-dot advertising" id="dot-${id}"></div>
+            <div class="time-display" id="time-${id}">--:--</div>
+            <div class="battery-display">
+              <div class="battery-icon"><div class="battery-fill" id="batt-fill-${id}" style="width:100%"></div></div>
+              <span id="batt-${id}">--%</span>
+            </div>
+          </div>
+          <div class="waiting-screen" id="waiting-${id}">
+            <div class="ring"></div>
+            <div class="text">Advertising...</div>
+          </div>
+          <div class="vitals-grid" id="vitals-${id}" style="display:none">
+            <div class="vital-item vital-hr">
+              <div class="vital-icon">♥</div>
+              <div class="vital-value" id="hr-${id}">--</div>
+              <div class="vital-unit">bpm</div>
+            </div>
+            <div class="vital-item vital-spo2">
+              <div class="vital-icon">◉</div>
+              <div class="vital-value" id="spo2-${id}">--</div>
+              <div class="vital-unit">SpO₂ %</div>
+            </div>
+            <div class="vital-item vital-temp">
+              <div class="vital-icon">🌡</div>
+              <div class="vital-value" id="temp-${id}">--</div>
+              <div class="vital-unit">°C</div>
+            </div>
+            <div class="vital-item vital-rr">
+              <div class="vital-icon">≋</div>
+              <div class="vital-value" id="rr-${id}">--</div>
+              <div class="vital-unit">brpm</div>
+            </div>
+            <div class="vital-item vital-bp" style="grid-column: span 2">
+              <div class="vital-icon">⬇⬆</div>
+              <div class="vital-value" id="bp-${id}">--/--</div>
+              <div class="vital-unit">mmHg</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="watch-profile">${profile}</div>
+      <button class="pair-btn" id="btn-${id}" onclick="window.toggleDevice(${id})">Connect</button>
+    `;
+    return container;
+  }
+
+  function updateTime(id) {
+    const el = document.getElementById(`time-${id}`);
+    if (el) {
+      const now = new Date();
+      el.textContent = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    }
+  }
+
+  function updateVitals(id, v) {
+    const set = (elId, val) => {
+      const el = document.getElementById(elId);
+      if (el) el.textContent = val;
+    };
+
+    set(`hr-${id}`, Math.round(v.hr));
+    set(`spo2-${id}`, v.spo2);
+    set(`temp-${id}`, v.temp.toFixed(1));
+    set(`rr-${id}`, v.rr);
+    set(`bp-${id}`, `${v.sbp}/${v.dbp}`);
+    set(`batt-${id}`, `${v.battery}%`);
+
+    // Battery fill
+    const battFill = document.getElementById(`batt-fill-${id}`);
+    if (battFill) {
+      battFill.style.width = `${v.battery}%`;
+      battFill.className = `battery-fill${v.battery < 20 ? ' low' : ''}`;
+    }
+
+    // Fall alert
+    const watch = document.getElementById(`watch-${id}`);
+    const existing = watch?.querySelector('.fall-alert');
+    if (existing) existing.remove();
+    if (v.fall) {
+      const fallDiv = document.createElement('div');
+      fallDiv.className = 'fall-alert';
+      fallDiv.textContent = `⚠ FALL ${FALL_TYPES[v.fallType] || 'DETECTED'}`;
+      watch.querySelector('.screen').appendChild(fallDiv);
+      log(`Device ${id}: FALL DETECTED (${FALL_TYPES[v.fallType] || 'type ' + v.fallType})`, 'fall');
+      setTimeout(() => fallDiv.remove(), 4000);
+    }
+
+    // Abnormal highlight (basic: HR > 110 or SpO2 < 93)
+    const hrEl = document.getElementById(`hr-${id}`);
+    const spo2El = document.getElementById(`spo2-${id}`);
+    if (hrEl) hrEl.classList.toggle('abnormal', v.hr > 110 || v.hr < 50);
+    if (spo2El) spo2El.classList.toggle('abnormal', v.spo2 < 93);
+  }
+
+  function connectDevice(id) {
+    const d = devices[id];
+    if (!d || d.state === 'connected') return;
+
+    d.ws = new WebSocket(`${WS_BASE}/device/${id}`);
+
+    d.ws.onopen = () => {
+      d.state = 'connected';
+      const watch = document.getElementById(`watch-${id}`);
+      const dot = document.getElementById(`dot-${id}`);
+      const waiting = document.getElementById(`waiting-${id}`);
+      const vitalsEl = document.getElementById(`vitals-${id}`);
+      const btn = document.getElementById(`btn-${id}`);
+
+      watch.className = 'watch connected';
+      dot.className = 'status-dot connected';
+      waiting.style.display = 'none';
+      vitalsEl.style.display = 'grid';
+      btn.textContent = 'Disconnect';
+      btn.className = 'pair-btn disconnect';
+
+      log(`Device ${id} (${d.name}) connected`, 'connect');
+      updateStatus();
+    };
+
+    d.ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'vitals') {
+          d.vitals = msg;
+          updateVitals(id, msg);
+          updateTime(id);
+        }
+      } catch {}
+    };
+
+    d.ws.onclose = () => {
+      d.state = 'advertising';
+      d.ws = null;
+      const watch = document.getElementById(`watch-${id}`);
+      const dot = document.getElementById(`dot-${id}`);
+      const waiting = document.getElementById(`waiting-${id}`);
+      const vitalsEl = document.getElementById(`vitals-${id}`);
+      const btn = document.getElementById(`btn-${id}`);
+
+      if (watch) watch.className = 'watch advertising';
+      if (dot) dot.className = 'status-dot advertising';
+      if (waiting) waiting.style.display = 'flex';
+      if (vitalsEl) vitalsEl.style.display = 'none';
+      if (btn) { btn.textContent = 'Connect'; btn.className = 'pair-btn'; }
+
+      log(`Device ${id} (${d.name}) disconnected`, 'disconnect');
+      updateStatus();
+    };
+  }
+
+  function disconnectDevice(id) {
+    const d = devices[id];
+    if (d?.ws) {
+      d.ws.close();
+    }
+  }
+
+  window.toggleDevice = function(id) {
+    const d = devices[id];
+    if (!d) return;
+    if (d.state === 'connected') {
+      disconnectDevice(id);
+    } else {
+      connectDevice(id);
+    }
+  };
+
+  function updateStatus() {
+    const total = Object.keys(devices).length;
+    const connected = Object.values(devices).filter(d => d.state === 'connected').length;
+    statusLine.textContent = `${total} devices | ${connected} connected | ${total - connected} advertising`;
+  }
+
+  // ── Scan for devices ──
+  function startScan() {
+    const scanWs = new WebSocket(`${WS_BASE}/scan`);
+
+    scanWs.onmessage = (event) => {
+      try {
+        const deviceList = JSON.parse(event.data);
+        let newDevices = false;
+
+        for (const dev of deviceList) {
+          if (!devices[dev.id]) {
+            devices[dev.id] = {
+              id: dev.id,
+              name: dev.name,
+              profile: '',
+              state: 'advertising',
+              ws: null,
+              vitals: null,
+            };
+            newDevices = true;
+          }
+        }
+
+        if (newDevices) {
+          // Fetch device profiles from health endpoint
+          fetch('/health').then(r => r.json()).then(() => {
+            renderDevices(deviceList);
+            updateStatus();
+          });
+        }
+      } catch {}
+    };
+
+    scanWs.onclose = () => {
+      log('Scan connection lost, reconnecting...', 'disconnect');
+      setTimeout(startScan, 3000);
+    };
+
+    scanWs.onerror = () => {
+      setTimeout(startScan, 3000);
+    };
+  }
+
+  const PROFILES = ['healthy-adult', 'elderly-stable', 'elderly-hypertensive', 'elderly-copd', 'post-surgical'];
+
+  function renderDevices(deviceList) {
+    grid.innerHTML = '';
+    for (const dev of deviceList) {
+      const profile = PROFILES[dev.id % PROFILES.length];
+      devices[dev.id].name = dev.name;
+      devices[dev.id].profile = profile;
+      const el = createWatchElement(dev.id, dev.name, profile);
+      devices[dev.id].element = el;
+      grid.appendChild(el);
+
+      // Auto-connect all devices for the visual display
+      connectDevice(dev.id);
+    }
+  }
+
+  // ── Clock update ──
+  setInterval(() => {
+    for (const id of Object.keys(devices)) {
+      if (devices[id].state === 'connected') updateTime(id);
+    }
+  }, 30000);
+
+  // Start
+  log('Zenzer Device Emulator UI started');
+  startScan();
+})();
+</script>
+</body>
+</html>

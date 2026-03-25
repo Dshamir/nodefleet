@@ -1,11 +1,18 @@
 import { IncomingMessage } from 'http';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { DeviceManager } from './device-manager';
 import { BleNotification, VitalReading } from './types';
 import { config } from './config';
 
 export function createWsServer(deviceManager: DeviceManager): http.Server {
+  // Resolve public dir — works from both src/ (dev) and dist/ (built)
+  const publicDir = fs.existsSync(path.join(__dirname, 'public'))
+    ? path.join(__dirname, 'public')
+    : path.join(__dirname, '..', 'src', 'public');
+
   const server = http.createServer((req, res) => {
     // Health check endpoint for Docker
     if (req.url === '/health') {
@@ -17,6 +24,17 @@ export function createWsServer(deviceManager: DeviceManager): http.Server {
       }));
       return;
     }
+
+    // Serve the watch UI
+    if (req.url === '/' || req.url === '/index.html') {
+      const htmlPath = path.join(publicDir, 'index.html');
+      if (fs.existsSync(htmlPath)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(fs.readFileSync(htmlPath));
+        return;
+      }
+    }
+
     res.writeHead(404);
     res.end();
   });
