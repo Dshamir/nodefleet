@@ -172,6 +172,17 @@ curl -s -H 'X-Internal-Auth: J5OhTsuXMnfeMSTwq6Bw' http://localhost:43002/admin/
 - **Bulk vitals endpoint:** Uses direct \`vitalRepository.save(entities)\` instead of going through the use-case layer. Acceptable for seeding but should not be used in production.
 - **PatientDataAccessModel PK:** Uses \`@PrimaryColumn('uuid')\` (not \`@PrimaryGeneratedColumn\`), so UUID must be provided explicitly via \`randomUUID()\`.
 - **Avatar unique constraint:** The \`user.avatar\` column has a unique constraint. Setting all users to empty string \`''\` causes duplicate key violations. Use \`null\` instead.
+
+## Continuous Vitals Simulation (Device + Gateway Emulators)
+
+As of 2026-03-25, the seed script provides **static historical data**. For **continuous live simulation**, two Docker emulator containers are available:
+
+- **\`zenzer-device-emulator\`** — simulates 5 virtual biometric wristbands producing realistic vitals with circadian rhythm, abnormal episodes, and fall events. Exposes BLE-over-WebSocket at \`ws://zenzer-device-emulator:8765\`.
+- **\`rpi-gateway-emulator\`** — authenticates as a Gateway role via Keycloak, connects to virtual devices, batches vitals, and POSTs to \`POST /gateway/vitals\` every 10s. Also publishes real-time via socket.io \`/ws/current-vitals\`.
+
+Data volume: 5 devices × 1 reading/5s = 86,400 vitals/day. See the wiki article **"Device & Gateway Emulators"** for full documentation.
+
+Start with: \`docker compose up -d --build zenzer-device-emulator rpi-gateway-emulator\`
 `,
   createdAt: new Date(),
   updatedAt: new Date(),

@@ -195,7 +195,28 @@ Each card shows one patient (not one reading):
 
 ---
 
-*Last updated: March 19, 2026*
+## 7. Continuous Test Data — Device & Gateway Emulators
+
+The Vitals Monitor requires active patient vitals to display. Two data sources are available:
+
+| Source | Type | Description |
+|--------|------|-------------|
+| \`seed-medical-test-ecosystem.js\` | **Static** | Seeds 210 historical vital readings for 1 patient (7 days × 30/day) |
+| \`zenzer-device-emulator\` + \`rpi-gateway-emulator\` | **Continuous** | 5 virtual patients, live vitals every 5s, submitted every 10s |
+
+For realistic dashboard testing, run both emulators:
+
+\`\`\`bash
+docker compose up -d --build zenzer-device-emulator rpi-gateway-emulator
+\`\`\`
+
+This will auto-provision 5 emulated patients (with names like Margaret Chen, Robert Williams, etc.) and stream continuous vitals that appear on the Vitals Monitor within 30 seconds (cache refresh interval).
+
+See wiki article **"Zenzer Device Emulator & RPi Gateway Emulator"** for full architecture and configuration.
+
+---
+
+*Last updated: March 25, 2026*
 `
   },
   {

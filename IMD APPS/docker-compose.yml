@@ -296,6 +296,53 @@ services:
       - zenzers-net
     restart: unless-stopped
 
+  # ── Device & Gateway Emulators ────────────────────────────────────────
+  zenzer-device-emulator:
+    build:
+      context: ./packages/zenzer-device-emulator
+    environment:
+      DEVICE_COUNT: ${EMULATOR_DEVICE_COUNT:-5}
+      WS_PORT: 8765
+      READING_INTERVAL_MS: ${EMULATOR_READING_INTERVAL:-5000}
+    ports:
+      - "48765:8765"
+    networks:
+      - zenzers-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8765/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  rpi-gateway-emulator:
+    build:
+      context: ./packages/rpi-gateway-emulator
+    environment:
+      DEVICE_EMULATOR_URL: ws://zenzer-device-emulator:8765
+      MEDICAL_API_URL: http://medical-api:3002
+      ADMIN_BACKEND_URL: http://admin-backend:3001
+      INTERNAL_PASSKEY: ${INTERNAL_SERVICES_PASSKEY}
+      GATEWAY_EMAIL: gateway@zenzers-emulator.local
+      GATEWAY_PASSWORD: GatewayEmul8!
+      PATIENT_COUNT: ${EMULATOR_DEVICE_COUNT:-5}
+      SUBMIT_INTERVAL_MS: 10000
+      HEARTBEAT_INTERVAL_MS: 60000
+      SENIOR_HOME_NAME: "Emulated Senior Residence"
+      MONGO_URL: mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb/mediastore?authSource=admin
+      KEYCLOAK_URL: http://keycloak:8080/auth
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    depends_on:
+      zenzer-device-emulator:
+        condition: service_healthy
+      medical-api:
+        condition: service_started
+      mongodb:
+        condition: service_healthy
+    networks:
+      - zenzers-net
+    restart: unless-stopped
+
   # ── ngrok Tunnel ─────────────────────────────────────────────────────
   ngrok:
     image: ngrok/ngrok:latest

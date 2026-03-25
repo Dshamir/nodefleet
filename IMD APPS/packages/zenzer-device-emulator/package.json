@@ -1,0 +1,19 @@
+{
+  "name": "@zenzers/device-emulator",
+  "version": "1.0.0",
+  "description": "Zenzer biometric wristband emulator — simulates N virtual BLE devices over WebSocket",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc -w & nodemon dist/index.js"
+  },
+  "dependencies": {
+    "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.10",
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

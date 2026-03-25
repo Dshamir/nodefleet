@@ -1,0 +1,16 @@
+export const config = {
+  deviceEmulatorUrl: process.env.DEVICE_EMULATOR_URL || 'ws://zenzer-device-emulator:8765',
+  medicalApiUrl: process.env.MEDICAL_API_URL || 'http://medical-api:3002',
+  adminBackendUrl: process.env.ADMIN_BACKEND_URL || 'http://admin-backend:3001',
+  internalPasskey: process.env.INTERNAL_PASSKEY || '',
+  gatewayEmail: process.env.GATEWAY_EMAIL || 'gateway@zenzers-emulator.local',
+  gatewayPassword: process.env.GATEWAY_PASSWORD || 'GatewayEmul8!',
+  patientCount: parseInt(process.env.PATIENT_COUNT || '5', 10),
+  submitIntervalMs: parseInt(process.env.SUBMIT_INTERVAL_MS || '10000', 10),
+  heartbeatIntervalMs: parseInt(process.env.HEARTBEAT_INTERVAL_MS || '60000', 10),
+  seniorHomeName: process.env.SENIOR_HOME_NAME || 'Emulated Senior Residence',
+  logLevel: process.env.LOG_LEVEL || 'info',
+  mongoUrl: process.env.MONGO_URL || 'mongodb://localhost:27017/mediastore',
+  keycloakUrl: process.env.KEYCLOAK_URL || 'http://keycloak:8080/auth',
+  keycloakAdminPassword: process.env.KEYCLOAK_ADMIN_PASSWORD || 'admin',
+};
