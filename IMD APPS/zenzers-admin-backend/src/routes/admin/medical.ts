@@ -220,9 +220,13 @@ async function fetchCompositePatients(authHeader: string) {
     }
   }
 
-  // Build composite patient nodes
+  // Build composite patient nodes — include ALL patients, not just those with vitals
   const patients: any[] = [];
+  const seenPatients = new Set<string>();
+
+  // First pass: patients WITH vitals data
   for (const [pid, v] of Object.entries(latestByPatient)) {
+    seenPatients.add(pid);
     const p = patientMap[pid];
     let status: string = 'normal';
     if ((v as any).fall) status = 'critical';
@@ -270,6 +274,54 @@ async function fetchCompositePatients(authHeader: string) {
         spO2: (v as any).spo2 ?? null,
         timestamp: (v as any)._ts,
         status,
+      },
+    });
+  }
+
+  // Second pass: patients WITHOUT vitals (still need to show their card)
+  for (const [pid, p] of Object.entries(patientMap)) {
+    if (seenPatients.has(pid)) continue;
+    if (p.deletedAt) continue; // skip soft-deleted
+
+    const docId = doctorForPatient[pid];
+    const cgId = caregiverForPatient[pid];
+    const gw = gatewayByPatient[pid];
+    const doc = docId ? doctorMap[docId] : null;
+    const cg = cgId ? caregiverMap[cgId] : null;
+
+    patients.push({
+      patientId: pid,
+      patientName: fullName(p),
+      email: p.email || '',
+      phone: p.phone || '',
+      dateOfBirth: p.patientMetadata?.dob || null,
+      doctor: doc ? {
+        id: doc.id,
+        name: fullName(doc),
+        email: doc.email || '',
+        phone: doc.phone || '',
+        specialization: doc.doctorMetadata?.specialty || doc.specialty || '',
+      } : null,
+      caregiver: cg ? {
+        id: cg.id,
+        name: fullName(cg),
+        email: cg.email || '',
+        phone: cg.phone || '',
+      } : null,
+      gateway: gw ? {
+        deviceId: gw.deviceId || gw.id,
+        status: gw.status || 'offline',
+        lastSeen: gw.lastSeen || gw.createdAt || null,
+        batteryPercent: gw.batteryPercent ?? 0,
+      } : null,
+      latestVitals: {
+        heartRate: null,
+        bloodPressureSystolic: null,
+        bloodPressureDiastolic: null,
+        temperature: null,
+        spO2: null,
+        timestamp: null,
+        status: 'normal',
       },
     });
   }
@@ -565,6 +617,63 @@ router.get('/medical-stats', (req, res) => proxyGet('/admin/stats', req, res));
 // CRUD: User Management
 // ---------------------------------------------------------------------------
 router.put('/users/:id', (req, res) => proxyMutation('PUT', `/admin/users/${req.params.id}`, req, res));
+router.post('/users', (req, res) => proxyMutation('POST', '/admin/users', req, res));
 router.delete('/users/:id', (req, res) => proxyMutation('DELETE', `/admin/users/${req.params.id}`, req, res));
+
+// ---------------------------------------------------------------------------
+// Gateway Device Registration (Phone-as-Node)
+// When a mobile app connects, it registers the device as a gateway node.
+// ---------------------------------------------------------------------------
+router.post('/gateways/register', async (req: Request, res: Response) => {
+  try {
+    const { userId, deviceId, deviceModel, osVersion, appVersion } = req.body;
+    if (!userId || !deviceId) {
+      res.status(400).json({ error: 'userId and deviceId are required' });
+      return;
+    }
+
+    const url = new URL('/admin/gateways/register', MEDICAL_API_URL);
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Auth': INTERNAL_PASSKEY,
+      },
+      body: JSON.stringify({ userId, deviceId, deviceModel, osVersion, appVersion }),
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err: any) {
+    logger.error(`Gateway register failed: ${err.message}`);
+    res.status(502).json({ error: 'Medical API unavailable', details: err.message });
+  }
+});
+
+// POST /admin/gateways/heartbeat — Mobile app sends periodic heartbeats
+router.post('/gateways/heartbeat', async (req: Request, res: Response) => {
+  try {
+    const { userId, deviceId, batteryPercent } = req.body;
+    if (!userId || !deviceId) {
+      res.status(400).json({ error: 'userId and deviceId are required' });
+      return;
+    }
+
+    const url = new URL('/admin/gateways/heartbeat', MEDICAL_API_URL);
+    const response = await fetch(url.toString(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Auth': INTERNAL_PASSKEY,
+      },
+      body: JSON.stringify({ userId, deviceId, batteryPercent, lastSeen: new Date().toISOString() }),
+    });
+    const data = await response.json();
+    res.status(response.status).json(data);
+  } catch (err: any) {
+    logger.error(`Gateway heartbeat failed: ${err.message}`);
+    // Don't fail the heartbeat — just acknowledge
+    res.json({ ok: true });
+  }
+});
 
 export default router;

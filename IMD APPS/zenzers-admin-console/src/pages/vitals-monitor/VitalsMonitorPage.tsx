@@ -38,31 +38,34 @@ export function VitalsMonitorPage() {
           <h1 className="text-2xl font-bold text-slate-800">Vitals Monitor</h1>
           <p className="text-slate-500 mt-1">Real-time patient vital signs &mdash; {data?.total ?? 0} patients</p>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
-          </span>
-          <span className="text-xs font-medium text-green-600">Live &mdash; 30s</span>
+        <div className="flex items-center gap-4">
+          {/* HIPAA Mask/Unmask — prominent toggle */}
+          <Button
+            icon={unmasked ? 'pi pi-eye' : 'pi pi-eye-slash'}
+            label={unmasked ? 'PHI Visible' : 'PHI Masked'}
+            severity={unmasked ? 'warning' : 'secondary'}
+            className={unmasked ? 'p-button-raised' : ''}
+            outlined={!unmasked}
+            onClick={toggle}
+            tooltip={unmasked ? 'PHI is visible — auto-relocks in 5 min' : 'Click to unmask Protected Health Information'}
+            tooltipOptions={{ position: 'bottom' }}
+          />
+          <div className="flex items-center gap-2">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+            </span>
+            <span className="text-xs font-medium text-green-600">Live &mdash; 30s</span>
+          </div>
         </div>
       </div>
 
-      {/* Controls: search + mask toggle */}
-      <div className="flex items-center gap-3 mb-4">
-        <span className="p-input-icon-left flex-1 md:flex-none md:w-80">
+      {/* Search bar */}
+      <div className="mb-4">
+        <span className="p-input-icon-left w-full md:w-96">
           <i className="pi pi-search" />
           <InputText value={globalFilter} onChange={e => setGlobalFilter(e.target.value)} placeholder="Search patient..." className="w-full" />
         </span>
-        <Button
-          icon={unmasked ? 'pi pi-eye' : 'pi pi-eye-slash'}
-          label={unmasked ? 'Unmask PHI' : 'Masked'}
-          severity={unmasked ? 'warning' : 'secondary'}
-          outlined
-          size="small"
-          onClick={toggle}
-          tooltip={unmasked ? 'PHI is visible — auto-relocks in 5 min' : 'Click to unmask Protected Health Information'}
-          tooltipOptions={{ position: 'bottom' }}
-        />
       </div>
 
       {/* Patient cards grid */}

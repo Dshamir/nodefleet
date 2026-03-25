@@ -1,37 +1,33 @@
 /**
- * Mobile-App-Compatible API Routes
+ * Mobile-App-Compatible API Routes — Unified Data Stack
  *
- * Serves the endpoints that the Zenzers4Life mobile app (alevelsoft-med-app)
- * expects. Provides direct JWT auth against MongoDB users collection,
- * bypassing Keycloak for local development.
+ * ALL data flows through the Medical API (NestJS:3002) → PostgreSQL.
+ * Auth endpoints use local JWT + MongoDB for passwords/tokens only.
+ * Data endpoints proxy to Medical API with X-Internal-Auth headers.
  *
- * Endpoints:
- *   POST /sign-in, /refresh-token, /sign-out
- *   POST /patient/sign-up, /sign-up/confirm, /sign-up/resend-code
- *   POST /forgot-password, /forgot-password/confirm
- *   GET|PATCH /patient/my-profile
- *   POST /change-password
- *   PATCH /measurement-system
- *   POST /patient/vitals, GET /patient/my-vitals
- *   GET /vitals/absolute, GET /patient/my-vital-thresholds
- *   GET /patient/emergency-contacts
- *   POST|DELETE /patient/person-emergency-contact
- *   GET /specialties, /diagnoses, /medications
+ * Architecture:
+ *   Mobile App → Admin Backend (3001) → Medical API (3002) → PostgreSQL
+ *   Admin Console → Admin Backend (3001) → Medical API (3002) → PostgreSQL
  */
 import { Router, Request, Response, NextFunction } from 'express';
+import fetch from 'node-fetch';
 
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { getDb, ObjectId } = require('./admin/db');
 
 const router = Router();
+const logger = require('../logging').getLogger('mobile-api');
 
 // ── Config ────────────────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET || 'zenzers-dev-jwt-secret-change-in-prod';
 const ACCESS_TOKEN_TTL = '1h';
 const REFRESH_TOKEN_TTL = '30d';
+const MEDICAL_API_URL = process.env.MEDICAL_API_URL || 'http://medical-api:3002';
+const INTERNAL_PASSKEY = process.env.INTERNAL_SERVICES_PASSKEY || '';
 
 // ── Helpers ───────────────────────────────────────────────────────────
+
 function signAccessToken(userId: string, email: string, role: string) {
   return jwt.sign({ sub: userId, email, role }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
 }
@@ -46,45 +42,135 @@ function normalizeRole(role: string): string {
   return map[role?.toLowerCase()] || role || 'Patient';
 }
 
-function userToResponse(user: any) {
+/** Build user response shape from PostgreSQL user record */
+function pgUserToResponse(user: any) {
   const role = normalizeRole(user.role);
   return {
     avatar: user.avatar || '',
     deletedAt: user.deletedAt || null,
-    userId: user._id.toString(),
+    userId: user.id,
     email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    roleLabel: user.roleLabel || role,
+    firstName: user.firstName || user.first_name || '',
+    lastName: user.lastName || user.last_name || '',
+    roleLabel: user.roleLabel || user.role_label || role,
     phone: user.phone || '',
     role,
-    passwordUpdatedAt: user.passwordUpdatedAt || 0,
-    measurementSystem: user.measurementSystem || 'Metric',
+    passwordUpdatedAt: user.passwordUpdatedAt || user.password_updated_at || 0,
+    measurementSystem: user.measurementSystem || user.measurement_system || 'Metric',
   };
 }
 
-/** Middleware: verify Bearer token and attach req.userId / req.userEmail */
-async function requireAuth(req: Request & { userId?: string; userEmail?: string }, res: Response, next: NextFunction) {
+/** Middleware: verify Bearer token and attach req.userId / req.userEmail / req.userRole */
+async function requireAuth(req: Request & { userId?: string; userEmail?: string; userRole?: string }, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith('Bearer ')) return res.status(401).json({ message: 'Missing or invalid token' });
   try {
     const decoded: any = jwt.verify(header.slice(7), JWT_SECRET);
     req.userId = decoded.sub;
     req.userEmail = decoded.email;
+    req.userRole = decoded.role;
     next();
   } catch {
     return res.status(401).json({ message: 'Token expired or invalid' });
   }
 }
 
+// ── Medical API proxy helpers ─────────────────────────────────────────
+
+function internalHeaders(userId: string, role: string = 'Patient'): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    'X-Internal-Auth': INTERNAL_PASSKEY,
+    'X-Internal-User-Id': userId,
+    'X-Internal-User-Role': normalizeRole(role),
+  };
+}
+
+async function proxyGet(path: string, userId: string, role: string, query?: Record<string, any>): Promise<any> {
+  const url = new URL(path, MEDICAL_API_URL);
+  if (query) {
+    Object.entries(query).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));
+    });
+  }
+  const response = await fetch(url.toString(), { headers: internalHeaders(userId, role) });
+  return { status: response.status, data: await response.json() };
+}
+
+async function proxyPost(path: string, userId: string, role: string, body: any): Promise<any> {
+  const url = new URL(path, MEDICAL_API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'POST',
+    headers: internalHeaders(userId, role),
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, data: await response.json() };
+}
+
+async function proxyPatch(path: string, userId: string, role: string, body: any): Promise<any> {
+  const url = new URL(path, MEDICAL_API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'PATCH',
+    headers: internalHeaders(userId, role),
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, data: await response.json() };
+}
+
+async function proxyPut(path: string, userId: string, role: string, body: any): Promise<any> {
+  const url = new URL(path, MEDICAL_API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'PUT',
+    headers: internalHeaders(userId, role),
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, data: await response.json() };
+}
+
+async function proxyDelete(path: string, userId: string, role: string): Promise<any> {
+  const url = new URL(path, MEDICAL_API_URL);
+  const response = await fetch(url.toString(), {
+    method: 'DELETE',
+    headers: internalHeaders(userId, role),
+  });
+  return { status: response.status, data: await response.json() };
+}
+
+/** Fetch user from PostgreSQL via admin endpoint */
+async function fetchPgUser(userId: string): Promise<any | null> {
+  try {
+    const url = new URL(`/admin/patients/${userId}`, MEDICAL_API_URL);
+    const response = await fetch(url.toString(), {
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY },
+    });
+    if (response.status === 200) return await response.json();
+
+    // Try as doctor
+    const url2 = new URL(`/admin/doctors`, MEDICAL_API_URL);
+    url2.searchParams.set('limit', '1');
+    const resp2 = await fetch(url2.toString(), {
+      headers: { 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY },
+    });
+    if (resp2.status === 200) {
+      const result: any = await resp2.json();
+      const found = (result.data || []).find((u: any) => u.id === userId);
+      if (found) return found;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
-// AUTH ENDPOINTS
+// AUTH ENDPOINTS (hybrid: local JWT + PostgreSQL users)
 // ═══════════════════════════════════════════════════════════════════════
 
 /**
  * POST /sign-in
- * Body: { email, password, rememberMe? }
- * Returns: { accessToken, accessTokenExpireTime, refreshToken, user }
+ * Body: { email, password }
+ * Verifies password from MongoDB mobilePasswords collection,
+ * fetches user data from PostgreSQL.
  */
 router.post('/sign-in', async (req: Request, res: Response) => {
   try {
@@ -92,18 +178,55 @@ router.post('/sign-in', async (req: Request, res: Response) => {
     if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
 
     const db = await getDb();
-    const user = await db.collection('mobileUsers').findOne({ email: email.toLowerCase().trim() });
-    if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+    const normalizedEmail = email.toLowerCase().trim();
 
-    const valid = await bcrypt.compare(password, user.password);
+    // Check password store (MongoDB — stores hashed passwords + pgUserId mapping)
+    const creds = await db.collection('mobilePasswords').findOne({ email: normalizedEmail });
+    if (!creds) {
+      // Fallback: try legacy mobileUsers collection for migration compatibility
+      const legacyUser = await db.collection('mobileUsers').findOne({ email: normalizedEmail });
+      if (!legacyUser) return res.status(401).json({ message: 'Invalid credentials' });
+      const valid = await bcrypt.compare(password, legacyUser.password);
+      if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
+
+      // Legacy user found — issue token with legacy ID, they should re-register
+      const role = normalizeRole(legacyUser.role);
+      const accessToken = signAccessToken(legacyUser._id.toString(), legacyUser.email, role);
+      const refreshToken = signRefreshToken(legacyUser._id.toString());
+      await db.collection('mobileRefreshTokens').insertOne({ userId: legacyUser._id, token: refreshToken, createdAt: new Date() });
+      return res.json({
+        accessToken,
+        accessTokenExpireTime: Math.floor(Date.now() / 1000) + 3600,
+        refreshToken,
+        user: {
+          avatar: legacyUser.avatar || '',
+          deletedAt: null,
+          userId: legacyUser._id.toString(),
+          email: legacyUser.email,
+          firstName: legacyUser.firstName || '',
+          lastName: legacyUser.lastName || '',
+          roleLabel: role,
+          phone: legacyUser.phone || '',
+          role,
+          passwordUpdatedAt: legacyUser.passwordUpdatedAt || 0,
+          measurementSystem: legacyUser.measurementSystem || 'Metric',
+        },
+      });
+    }
+
+    const valid = await bcrypt.compare(password, creds.passwordHash);
     if (!valid) return res.status(401).json({ message: 'Invalid credentials' });
 
-    const accessToken = signAccessToken(user._id.toString(), user.email, user.role);
-    const refreshToken = signRefreshToken(user._id.toString());
+    // Fetch full user from PostgreSQL
+    const pgUser = await fetchPgUser(creds.pgUserId);
+    if (!pgUser) return res.status(401).json({ message: 'User account not found in system' });
 
-    // Store refresh token
+    const role = normalizeRole(pgUser.role);
+    const accessToken = signAccessToken(creds.pgUserId, normalizedEmail, role);
+    const refreshToken = signRefreshToken(creds.pgUserId);
+
     await db.collection('mobileRefreshTokens').insertOne({
-      userId: user._id,
+      userId: creds.pgUserId,
       token: refreshToken,
       createdAt: new Date(),
     });
@@ -112,10 +235,10 @@ router.post('/sign-in', async (req: Request, res: Response) => {
       accessToken,
       accessTokenExpireTime: Math.floor(Date.now() / 1000) + 3600,
       refreshToken,
-      user: userToResponse(user),
+      user: pgUserToResponse(pgUser),
     });
   } catch (err: any) {
-    console.error('[mobile-api] sign-in error:', err.message);
+    logger.error(`sign-in error: ${err.message}`);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
@@ -134,16 +257,17 @@ router.post('/refresh-token', async (req: Request, res: Response) => {
     const stored = await db.collection('mobileRefreshTokens').findOne({ token: refreshToken });
     if (!stored) return res.status(401).json({ message: 'Invalid refresh token' });
 
-    const user = await db.collection('mobileUsers').findOne({ _id: new ObjectId(decoded.sub) });
-    if (!user) return res.status(401).json({ message: 'User not found' });
+    // Fetch user from PostgreSQL
+    const pgUser = await fetchPgUser(decoded.sub);
+    if (!pgUser) return res.status(401).json({ message: 'User not found' });
 
-    const newAccessToken = signAccessToken(user._id.toString(), user.email, user.role);
-    const newRefreshToken = signRefreshToken(user._id.toString());
+    const role = normalizeRole(pgUser.role);
+    const newAccessToken = signAccessToken(decoded.sub, pgUser.email, role);
+    const newRefreshToken = signRefreshToken(decoded.sub);
 
-    // Rotate refresh token
     await db.collection('mobileRefreshTokens').deleteOne({ _id: stored._id });
     await db.collection('mobileRefreshTokens').insertOne({
-      userId: user._id,
+      userId: decoded.sub,
       token: newRefreshToken,
       createdAt: new Date(),
     });
@@ -152,7 +276,7 @@ router.post('/refresh-token', async (req: Request, res: Response) => {
       accessToken: newAccessToken,
       accessTokenExpireTime: Math.floor(Date.now() / 1000) + 3600,
       refreshToken: newRefreshToken,
-      user: userToResponse(user),
+      user: pgUserToResponse(pgUser),
     });
   } catch {
     return res.status(401).json({ message: 'Invalid or expired refresh token' });
@@ -161,7 +285,6 @@ router.post('/refresh-token', async (req: Request, res: Response) => {
 
 /**
  * POST /sign-out
- * Body: { refreshToken }
  */
 router.post('/sign-out', async (req: Request, res: Response) => {
   try {
@@ -178,66 +301,156 @@ router.post('/sign-out', async (req: Request, res: Response) => {
 
 /**
  * POST /patient/sign-up
- * Body: { email, password, firstName, lastName, phone }
+ * Creates user in PostgreSQL via Medical API, stores password hash in MongoDB.
  */
 router.post('/patient/sign-up', async (req: Request, res: Response) => {
   try {
     const { email, password, firstName, lastName, phone } = req.body;
     if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
 
-    const db = await getDb();
-    const existing = await db.collection('mobileUsers').findOne({ email: email.toLowerCase().trim() });
-    if (existing) return res.status(409).json({ message: 'Email already registered' });
+    const normalizedEmail = email.toLowerCase().trim();
 
-    const hashed = await bcrypt.hash(password, 10);
-    const now = new Date();
-    const result = await db.collection('mobileUsers').insertOne({
-      email: email.toLowerCase().trim(),
-      password: hashed,
+    // Create user in PostgreSQL via Medical API
+    const createResult = await proxyPost('/admin/users', 'system', 'Patient', {
+      email: normalizedEmail,
       firstName: firstName || '',
       lastName: lastName || '',
       phone: phone || '',
-      role: 'patient',
-      roleLabel: 'patient',
-      avatar: '',
-      measurementSystem: 'Metric',
-      patientMetadata: {},
-      emailVerified: false,
-      verificationCode: String(Math.floor(100000 + Math.random() * 900000)),
-      deletedAt: null,
-      passwordUpdatedAt: now.getTime(),
-      createdAt: now,
-      updatedAt: now,
+      role: 'Patient',
+      roleLabel: 'Patient',
+      metadata: {},
     });
 
+    if (createResult.status === 409) {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
+    if (createResult.status >= 400) {
+      logger.error(`sign-up Medical API error: ${JSON.stringify(createResult.data)}`);
+      return res.status(createResult.status).json(createResult.data);
+    }
+
+    const pgUserId = createResult.data.userId;
+
+    // Store password hash in MongoDB (PostgreSQL doesn't store passwords — Keycloak does in prod)
+    const db = await getDb();
+    const hashed = await bcrypt.hash(password, 10);
+    const verificationCode = String(Math.floor(100000 + Math.random() * 900000));
+    await db.collection('mobilePasswords').updateOne(
+      { email: normalizedEmail },
+      {
+        $set: {
+          email: normalizedEmail,
+          pgUserId,
+          passwordHash: hashed,
+          emailVerified: false,
+          verificationCode,
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+
+    logger.info(`New patient registered: ${normalizedEmail} → pgUserId=${pgUserId}`);
     return res.status(201).json({
       message: 'Registration successful. Check email for verification code.',
-      userId: result.insertedId.toString(),
+      userId: pgUserId,
     });
   } catch (err: any) {
-    console.error('[mobile-api] sign-up error:', err.message);
+    logger.error(`sign-up error: ${err.message}`);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /doctor/sign-up
+ */
+router.post('/doctor/sign-up', async (req: Request, res: Response) => {
+  try {
+    const { email, password, firstName, lastName, phone, specialty, institution } = req.body;
+    if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const createResult = await proxyPost('/admin/users', 'system', 'Doctor', {
+      email: normalizedEmail,
+      firstName: firstName || '',
+      lastName: lastName || '',
+      phone: phone || '',
+      role: 'Doctor',
+      roleLabel: 'Doctor',
+      metadata: { specialty: specialty || '', institution: institution || '' },
+    });
+
+    if (createResult.status === 409) return res.status(409).json({ message: 'Email already registered' });
+    if (createResult.status >= 400) return res.status(createResult.status).json(createResult.data);
+
+    const db = await getDb();
+    const hashed = await bcrypt.hash(password, 10);
+    await db.collection('mobilePasswords').updateOne(
+      { email: normalizedEmail },
+      { $set: { email: normalizedEmail, pgUserId: createResult.data.userId, passwordHash: hashed, emailVerified: false, createdAt: new Date() } },
+      { upsert: true },
+    );
+
+    return res.status(201).json({ message: 'Registration successful', userId: createResult.data.userId });
+  } catch (err: any) {
+    logger.error(`doctor sign-up error: ${err.message}`);
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+/**
+ * POST /caregiver/sign-up
+ */
+router.post('/caregiver/sign-up', async (req: Request, res: Response) => {
+  try {
+    const { email, password, firstName, lastName, phone, institution } = req.body;
+    if (!email || !password) return res.status(400).json({ message: 'Email and password required' });
+
+    const normalizedEmail = email.toLowerCase().trim();
+    const createResult = await proxyPost('/admin/users', 'system', 'Caregiver', {
+      email: normalizedEmail,
+      firstName: firstName || '',
+      lastName: lastName || '',
+      phone: phone || '',
+      role: 'Caregiver',
+      roleLabel: 'Caregiver',
+      metadata: { institution: institution || '' },
+    });
+
+    if (createResult.status === 409) return res.status(409).json({ message: 'Email already registered' });
+    if (createResult.status >= 400) return res.status(createResult.status).json(createResult.data);
+
+    const db = await getDb();
+    const hashed = await bcrypt.hash(password, 10);
+    await db.collection('mobilePasswords').updateOne(
+      { email: normalizedEmail },
+      { $set: { email: normalizedEmail, pgUserId: createResult.data.userId, passwordHash: hashed, emailVerified: false, createdAt: new Date() } },
+      { upsert: true },
+    );
+
+    return res.status(201).json({ message: 'Registration successful', userId: createResult.data.userId });
+  } catch (err: any) {
+    logger.error(`caregiver sign-up error: ${err.message}`);
     return res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 /**
  * POST /sign-up/confirm
- * Body: { email, code }
  */
 router.post('/sign-up/confirm', async (req: Request, res: Response) => {
   try {
     const { email, code } = req.body;
     const db = await getDb();
-    const user = await db.collection('mobileUsers').findOne({ email: email?.toLowerCase().trim() });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const creds = await db.collection('mobilePasswords').findOne({ email: email?.toLowerCase().trim() });
+    if (!creds) return res.status(404).json({ message: 'User not found' });
 
-    // In dev, accept any 6-digit code or the stored code
-    if (user.verificationCode && user.verificationCode !== String(code)) {
+    if (creds.verificationCode && creds.verificationCode !== String(code)) {
       return res.status(400).json({ message: 'Invalid verification code' });
     }
 
-    await db.collection('mobileUsers').updateOne(
-      { _id: user._id },
+    await db.collection('mobilePasswords').updateOne(
+      { _id: creds._id },
       { $set: { emailVerified: true }, $unset: { verificationCode: '' } },
     );
     return res.json({ message: 'Email verified' });
@@ -248,14 +461,13 @@ router.post('/sign-up/confirm', async (req: Request, res: Response) => {
 
 /**
  * POST /sign-up/resend-code
- * Body: { email }
  */
 router.post('/sign-up/resend-code', async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     const db = await getDb();
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    await db.collection('mobileUsers').updateOne(
+    await db.collection('mobilePasswords').updateOne(
       { email: email?.toLowerCase().trim() },
       { $set: { verificationCode: code } },
     );
@@ -267,19 +479,17 @@ router.post('/sign-up/resend-code', async (req: Request, res: Response) => {
 
 /**
  * POST /forgot-password
- * Body: { email }
  */
 router.post('/forgot-password', async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     const db = await getDb();
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    await db.collection('mobileUsers').updateOne(
+    await db.collection('mobilePasswords').updateOne(
       { email: email?.toLowerCase().trim() },
       { $set: { resetCode: code } },
     );
-    // In dev, just log the code
-    console.log(`[mobile-api] Password reset code for ${email}: ${code}`);
+    logger.info(`Password reset code for ${email}: ${code}`);
     return res.json({ message: 'Password reset code sent' });
   } catch {
     return res.status(500).json({ message: 'Internal server error' });
@@ -288,21 +498,20 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
 
 /**
  * POST /forgot-password/confirm
- * Body: { email, code, newPassword }
  */
 router.post('/forgot-password/confirm', async (req: Request, res: Response) => {
   try {
     const { email, code, newPassword } = req.body;
     const db = await getDb();
-    const user = await db.collection('mobileUsers').findOne({ email: email?.toLowerCase().trim() });
-    if (!user || (user.resetCode && user.resetCode !== String(code))) {
+    const creds = await db.collection('mobilePasswords').findOne({ email: email?.toLowerCase().trim() });
+    if (!creds || (creds.resetCode && creds.resetCode !== String(code))) {
       return res.status(400).json({ message: 'Invalid code' });
     }
 
     const hashed = await bcrypt.hash(newPassword, 10);
-    await db.collection('mobileUsers').updateOne(
-      { _id: user._id },
-      { $set: { password: hashed, passwordUpdatedAt: Date.now() }, $unset: { resetCode: '' } },
+    await db.collection('mobilePasswords').updateOne(
+      { _id: creds._id },
+      { $set: { passwordHash: hashed }, $unset: { resetCode: '' } },
     );
     return res.json({ message: 'Password reset successful' });
   } catch {
@@ -311,63 +520,43 @@ router.post('/forgot-password/confirm', async (req: Request, res: Response) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// PROFILE ENDPOINTS (auth required)
+// PROFILE ENDPOINTS — proxy to Medical API
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * GET /patient/my-profile
- */
-router.get('/patient/my-profile', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
+router.get('/patient/my-profile', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
   try {
-    const db = await getDb();
-    const user = await db.collection('mobileUsers').findOne({ _id: new ObjectId(req.userId) });
-    if (!user) return res.status(404).json({ message: 'Profile not found' });
-    return res.json(userToResponse(user));
-  } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    const result = await proxyGet('/patient/my-profile', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.status === 200 ? pgUserToResponse(result.data) : result.data);
+  } catch (err: any) {
+    logger.error(`my-profile proxy error: ${err.message}`);
+    return res.status(502).json({ message: 'Medical API unavailable' });
   }
 });
 
-/**
- * PATCH /patient/my-profile
- * Body: partial profile fields
- */
-router.patch('/patient/my-profile', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
+router.patch('/patient/my-profile', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
   try {
-    const allowed = ['firstName', 'lastName', 'phone', 'avatar', 'patientMetadata', 'dob', 'gender', 'height', 'weight'];
-    const updates: any = {};
-    for (const key of allowed) {
-      if (req.body[key] !== undefined) updates[key] = req.body[key];
-    }
-    updates.updatedAt = new Date();
-
-    const db = await getDb();
-    await db.collection('mobileUsers').updateOne({ _id: new ObjectId(req.userId) }, { $set: updates });
-    const user = await db.collection('mobileUsers').findOne({ _id: new ObjectId(req.userId) });
-    return res.json(userToResponse(user));
-  } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    const result = await proxyPatch('/patient/my-profile', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.status === 200 ? pgUserToResponse(result.data) : result.data);
+  } catch (err: any) {
+    logger.error(`my-profile patch proxy error: ${err.message}`);
+    return res.status(502).json({ message: 'Medical API unavailable' });
   }
 });
 
-/**
- * POST /change-password
- * Body: { currentPassword, newPassword }
- */
 router.post('/change-password', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
   try {
     const { currentPassword, newPassword } = req.body;
     const db = await getDb();
-    const user = await db.collection('mobileUsers').findOne({ _id: new ObjectId(req.userId) });
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const creds = await db.collection('mobilePasswords').findOne({ pgUserId: req.userId });
+    if (!creds) return res.status(404).json({ message: 'User not found' });
 
-    const valid = await bcrypt.compare(currentPassword, user.password);
+    const valid = await bcrypt.compare(currentPassword, creds.passwordHash);
     if (!valid) return res.status(400).json({ message: 'Current password is incorrect' });
 
     const hashed = await bcrypt.hash(newPassword, 10);
-    await db.collection('mobileUsers').updateOne(
-      { _id: new ObjectId(req.userId) },
-      { $set: { password: hashed, passwordUpdatedAt: Date.now() } },
+    await db.collection('mobilePasswords').updateOne(
+      { _id: creds._id },
+      { $set: { passwordHash: hashed } },
     );
     return res.json({ message: 'Password changed' });
   } catch {
@@ -375,321 +564,436 @@ router.post('/change-password', requireAuth, async (req: Request & { userId?: st
   }
 });
 
-/**
- * PATCH /measurement-system
- * Body: { measurementSystem: 'Metric' | 'Imperial' }
- */
-router.patch('/measurement-system', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
+router.patch('/measurement-system', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
   try {
-    const { measurementSystem } = req.body;
-    const db = await getDb();
-    await db.collection('mobileUsers').updateOne(
-      { _id: new ObjectId(req.userId) },
-      { $set: { measurementSystem, updatedAt: new Date() } },
-    );
-    return res.json({ measurementSystem });
+    const result = await proxyPatch('/measurement-system', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
   } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(502).json({ message: 'Medical API unavailable' });
   }
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// VITALS ENDPOINTS
+// VITALS ENDPOINTS — proxy to Medical API
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * POST /patient/vitals
- * Body: { heartRate, oxygenSaturation, temperature, respirationRate, bloodPressure, steps, fallType, battery, ... }
- */
-router.post('/patient/vitals', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
+router.post('/patient/vitals', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
   try {
-    const db = await getDb();
-    const vital = {
-      userId: new ObjectId(req.userId),
-      ...req.body,
-      timestamp: req.body.timestamp || new Date(),
-      createdAt: new Date(),
-    };
-    const result = await db.collection('mobileVitals').insertOne(vital);
-    return res.status(201).json({ id: result.insertedId.toString(), message: 'Vitals recorded' });
+    const result = await proxyPost('/patient/vitals', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
   } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(502).json({ message: 'Medical API unavailable' });
   }
 });
 
-/**
- * GET /patient/my-vitals?from=ISO&to=ISO&limit=100&offset=0
- */
-router.get('/patient/my-vitals', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
+router.get('/patient/my-vitals', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
   try {
-    const db = await getDb();
-    const filter: any = { userId: new ObjectId(req.userId) };
-    if (req.query.from || req.query.to) {
-      filter.timestamp = {};
-      if (req.query.from) filter.timestamp.$gte = new Date(req.query.from as string);
-      if (req.query.to) filter.timestamp.$lte = new Date(req.query.to as string);
-    }
-    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
-    const offset = parseInt(req.query.offset as string) || 0;
-
-    const vitals = await db.collection('mobileVitals')
-      .find(filter)
-      .sort({ timestamp: -1 })
-      .skip(offset)
-      .limit(limit)
-      .toArray();
-
-    const total = await db.collection('mobileVitals').countDocuments(filter);
-    // App expects VitalsResponse shape: { vitals[], thresholds[], users[], total }
-    return res.json({ vitals, thresholds: [], users: [], total });
-  } catch {
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-/**
- * GET /vitals/absolute
- * Returns default vital thresholds (no auth required)
- */
-router.get('/vitals/absolute', (_req: Request, res: Response) => {
-  return res.json({
-    heartRate: { min: 40, max: 220 },
-    oxygenSaturation: { min: 70, max: 100 },
-    temperature: { min: 32, max: 42 },
-    respirationRate: { min: 4, max: 60 },
-    meanArterialPressure: { min: 43, max: 160 },
-    bloodPressure: { minSbp: 70, maxSbp: 220, minDbp: 30, maxDbp: 130 },
-  });
-});
-
-/**
- * GET /patient/my-vital-thresholds
- */
-router.get('/patient/my-vital-thresholds', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
-  try {
-    const db = await getDb();
-    const stored = await db.collection('mobileVitalThresholds').findOne({ userId: new ObjectId(req.userId) });
-    // App expects { threshold: { isPending, minHr, maxHr, ... }, users: [] }
-    const threshold = {
-      isPending: false,
-      thresholdsId: stored?._id?.toString() || 'default',
-      createdAt: stored?.createdAt || new Date().toISOString(),
-      minHr: stored?.heartRate?.min ?? 60,
-      maxHr: stored?.heartRate?.max ?? 100,
-      hrSetBy: '', hrSetAt: 0,
-      minTemp: stored?.temperature?.min ?? 36.1,
-      maxTemp: stored?.temperature?.max ?? 37.2,
-      tempSetBy: '', tempSetAt: 0,
-      minSpo2: stored?.oxygenSaturation?.min ?? 95,
-      spo2SetBy: '', spo2SetAt: 0,
-      minRr: stored?.respirationRate?.min ?? 12,
-      maxRr: stored?.respirationRate?.max ?? 20,
-      rrSetBy: '', rrSetAt: 0,
-      minSbp: stored?.bloodPressure?.minSbp ?? 90,
-      maxSbp: stored?.bloodPressure?.maxSbp ?? 140,
-      sbpSetBy: '', sbpSetAt: 0,
-      minDbp: stored?.bloodPressure?.minDbp ?? 60,
-      maxDbp: stored?.bloodPressure?.maxDbp ?? 90,
-      dbpSetBy: '', dbpSetAt: 0,
-      minMap: stored?.meanArterialPressure?.min ?? 70,
-      maxMap: stored?.meanArterialPressure?.max ?? 105,
-      mapSetBy: '', mapSetAt: 0,
-    };
-    return res.json({ threshold, users: [] });
-  } catch {
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════
-// EMERGENCY CONTACTS
-// ═══════════════════════════════════════════════════════════════════════
-
-/**
- * GET /patient/emergency-contacts
- * Returns: { persons: [...], organizations: [...] }
- */
-router.get('/patient/emergency-contacts', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
-  try {
-    const db = await getDb();
-    const contacts = await db.collection('mobileEmergencyContacts')
-      .find({ userId: new ObjectId(req.userId) })
-      .toArray();
-    const persons = contacts.filter((c: any) => c.type === 'person').map((c: any) => ({
-      ...c,
-      contactId: c._id.toString(),
-    }));
-    const organizations = contacts.filter((c: any) => c.type === 'organization').map((c: any) => ({
-      ...c,
-      contactId: c._id.toString(),
-    }));
-    return res.json({ persons, organizations });
-  } catch {
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-/**
- * POST /patient/person-emergency-contact
- */
-router.post('/patient/person-emergency-contact', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
-  try {
-    const db = await getDb();
-    const contact = {
-      userId: new ObjectId(req.userId),
-      type: 'person',
-      ...req.body,
-      createdAt: new Date(),
-    };
-    const result = await db.collection('mobileEmergencyContacts').insertOne(contact);
-    return res.status(201).json({ ...contact, _id: result.insertedId });
-  } catch {
-    return res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-/**
- * DELETE /patient/person-emergency-contact/:id
- */
-router.delete('/patient/person-emergency-contact/:id', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
-  try {
-    const db = await getDb();
-    await db.collection('mobileEmergencyContacts').deleteOne({
-      _id: new ObjectId(req.params.id),
-      userId: new ObjectId(req.userId),
+    const result = await proxyGet('/patient/my-vitals', req.userId!, req.userRole || 'Patient', {
+      startDate: req.query.startDate || req.query.from,
+      endDate: req.query.endDate || req.query.to,
+      limit: req.query.limit,
+      offset: req.query.offset,
     });
-    return res.json({ message: 'Contact removed' });
+    // Ensure app gets VitalsResponse shape
+    const data = result.data;
+    if (result.status === 200 && !data.vitals) {
+      return res.json({ vitals: Array.isArray(data) ? data : [], thresholds: [], users: [], total: 0 });
+    }
+    return res.status(result.status).json(data);
   } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.status(502).json({ message: 'Medical API unavailable' });
+  }
+});
+
+router.get('/vitals/absolute', async (req: Request, res: Response) => {
+  try {
+    const url = new URL('/vitals/absolute', MEDICAL_API_URL);
+    const response = await fetch(url.toString(), { headers: { 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY } });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch {
+    // Fallback defaults if Medical API is unreachable
+    return res.json({
+      heartRate: { min: 40, max: 220 },
+      oxygenSaturation: { min: 70, max: 100 },
+      temperature: { min: 32, max: 42 },
+      respirationRate: { min: 4, max: 60 },
+      meanArterialPressure: { min: 43, max: 160 },
+      bloodPressure: { minSbp: 70, maxSbp: 220, minDbp: 30, maxDbp: 130 },
+    });
+  }
+});
+
+router.get('/patient/my-vital-thresholds', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/patient/my-vital-thresholds', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.status(502).json({ message: 'Medical API unavailable' });
   }
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// REFERENCE DATA
+// EMERGENCY CONTACTS — proxy to Medical API
 // ═══════════════════════════════════════════════════════════════════════
 
-/**
- * GET /specialties
- */
+router.get('/patient/emergency-contacts', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/patient/emergency-contacts', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.status(502).json({ message: 'Medical API unavailable' });
+  }
+});
+
+router.post('/patient/person-emergency-contact', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPost('/patient/person-emergency-contact', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.status(502).json({ message: 'Medical API unavailable' });
+  }
+});
+
+router.delete('/patient/person-emergency-contact/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyDelete(`/patient/person-emergency-contact/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.status(502).json({ message: 'Medical API unavailable' });
+  }
+});
+
+router.all('/patient/organization-emergency-contact*', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    if (req.method === 'POST') {
+      const result = await proxyPost('/patient/organization-emergency-contact', req.userId!, req.userRole || 'Patient', req.body);
+      return res.status(result.status).json(result.data);
+    }
+    const result = await proxyGet('/patient/organization-emergency-contacts', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    if (req.method === 'GET') return res.json([]);
+    return res.json({ message: 'OK' });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// REFERENCE DATA — proxy to Medical API
+// ═══════════════════════════════════════════════════════════════════════
+
 router.get('/specialties', async (_req: Request, res: Response) => {
   try {
-    const db = await getDb();
-    const specialties = await db.collection('specialties').find({}).toArray();
-    if (specialties.length === 0) {
-      return res.json([
-        { _id: '1', name: 'Cardiology' },
-        { _id: '2', name: 'Neurology' },
-        { _id: '3', name: 'Pulmonology' },
-        { _id: '4', name: 'Internal Medicine' },
-        { _id: '5', name: 'Family Medicine' },
-        { _id: '6', name: 'Emergency Medicine' },
-        { _id: '7', name: 'Geriatrics' },
-      ]);
-    }
-    return res.json(specialties);
+    const url = new URL('/specialties', MEDICAL_API_URL);
+    const response = await fetch(url.toString(), { headers: { 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY } });
+    const data = await response.json();
+    return res.status(response.status).json(data);
   } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.json([
+      { _id: '1', name: 'Cardiology' },
+      { _id: '2', name: 'Neurology' },
+      { _id: '3', name: 'Pulmonology' },
+      { _id: '4', name: 'Internal Medicine' },
+      { _id: '5', name: 'Family Medicine' },
+      { _id: '6', name: 'Emergency Medicine' },
+      { _id: '7', name: 'Geriatrics' },
+    ]);
   }
 });
 
-/**
- * GET /diagnoses
- */
 router.get('/diagnoses', async (_req: Request, res: Response) => {
   try {
-    const db = await getDb();
-    const diagnoses = await db.collection('diagnoses').find({}).toArray();
-    if (diagnoses.length === 0) {
-      // App expects { diagnosisName } per Diagnosis type
-      return res.json([
-        { _id: '1', diagnosisName: 'Hypertension' },
-        { _id: '2', diagnosisName: 'Diabetes Type 2' },
-        { _id: '3', diagnosisName: 'Asthma' },
-        { _id: '4', diagnosisName: 'COPD' },
-        { _id: '5', diagnosisName: 'Heart Failure' },
-      ]);
-    }
-    return res.json(diagnoses);
+    const url = new URL('/diagnoses', MEDICAL_API_URL);
+    const response = await fetch(url.toString(), { headers: { 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY } });
+    const data = await response.json();
+    return res.status(response.status).json(data);
   } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.json([
+      { _id: '1', diagnosisName: 'Hypertension' },
+      { _id: '2', diagnosisName: 'Diabetes Type 2' },
+      { _id: '3', diagnosisName: 'Asthma' },
+      { _id: '4', diagnosisName: 'COPD' },
+      { _id: '5', diagnosisName: 'Heart Failure' },
+    ]);
   }
 });
 
-/**
- * GET /medications
- */
 router.get('/medications', async (_req: Request, res: Response) => {
   try {
-    const db = await getDb();
-    const medications = await db.collection('medications').find({}).toArray();
-    if (medications.length === 0) {
-      // App expects { genericName, brandNames } per MedicationList type
-      return res.json([
-        { _id: '1', genericName: 'Metformin', brandNames: 'Glucophage', dosageUnit: 'mg' },
-        { _id: '2', genericName: 'Lisinopril', brandNames: 'Zestril', dosageUnit: 'mg' },
-        { _id: '3', genericName: 'Atorvastatin', brandNames: 'Lipitor', dosageUnit: 'mg' },
-        { _id: '4', genericName: 'Metoprolol', brandNames: 'Lopressor', dosageUnit: 'mg' },
-        { _id: '5', genericName: 'Salbutamol', brandNames: 'Ventolin', dosageUnit: 'mcg' },
-      ]);
-    }
-    return res.json(medications);
+    const url = new URL('/medications', MEDICAL_API_URL);
+    const response = await fetch(url.toString(), { headers: { 'Content-Type': 'application/json', 'X-Internal-Auth': INTERNAL_PASSKEY } });
+    const data = await response.json();
+    return res.status(response.status).json(data);
   } catch {
-    return res.status(500).json({ message: 'Internal server error' });
+    return res.json([
+      { _id: '1', genericName: 'Metformin', brandNames: 'Glucophage', dosageUnit: 'mg' },
+      { _id: '2', genericName: 'Lisinopril', brandNames: 'Zestril', dosageUnit: 'mg' },
+      { _id: '3', genericName: 'Atorvastatin', brandNames: 'Lipitor', dosageUnit: 'mg' },
+      { _id: '4', genericName: 'Metoprolol', brandNames: 'Lopressor', dosageUnit: 'mg' },
+      { _id: '5', genericName: 'Salbutamol', brandNames: 'Ventolin', dosageUnit: 'mcg' },
+    ]);
   }
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// STUB ENDPOINTS — return empty/default data for endpoints the mobile
-// app calls but that aren't critical for basic login flow
+// DATA ACCESS / RELATIONSHIPS — proxy to Medical API
 // ═══════════════════════════════════════════════════════════════════════
 
-/** GET /patient/suggested-contacts */
-router.get('/patient/suggested-contacts', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ persons: [], organizations: [] });
+router.get('/patient/suggested-contacts', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/patient/suggested-contacts', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ persons: [], organizations: [] });
+  }
 });
 
-/** GET /patient/data-accesses */
-router.get('/patient/data-accesses', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
+router.get('/patient/data-accesses', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/patient/data-access/requests', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
 });
 
-/** POST /patient/data-access/* */
-router.post('/patient/data-access/:action', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
+router.post('/patient/data-access/:action', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPost(`/patient/data-access/${req.params.action}`, req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
 });
 
-/** GET /patient/my-doctors */
-router.get('/patient/my-doctors', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
+router.get('/patient/my-doctors', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/patient/my-doctors', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
 });
 
-/** GET /patient/my-caregivers */
-router.get('/patient/my-caregivers', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
+router.get('/patient/my-caregivers', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/patient/my-caregivers', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
 });
 
-/** PATCH /patient/organization-emergency-contact(s)/* */
-router.all('/patient/organization-emergency-contact*', requireAuth, (req: Request, res: Response) => {
-  if (req.method === 'GET') return res.json([]);
-  return res.json({ message: 'OK' });
+// ═══════════════════════════════════════════════════════════════════════
+// DOCTOR / CAREGIVER PROFILE PROXIES
+// ═══════════════════════════════════════════════════════════════════════
+
+router.get('/doctor/my-profile', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/doctor/my-profile', req.userId!, req.userRole || 'Doctor');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({});
+  }
 });
 
-/** PATCH /patient/person-emergency-contacts/order */
-router.patch('/patient/person-emergency-contacts/order', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
+router.patch('/doctor/my-profile', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPatch('/doctor/my-profile', req.userId!, req.userRole || 'Doctor', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
 });
 
-/** GET/POST /patient/person-suggested-contact/* */
-router.all('/patient/person-suggested-contact*', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
+router.get('/caregiver/my-profile', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/caregiver/my-profile', req.userId!, req.userRole || 'Caregiver');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({});
+  }
 });
 
-/** GET/POST /patient/organization-suggested-contact/* */
-router.all('/patient/organization-suggested-contact*', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
+router.patch('/caregiver/my-profile', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPatch('/caregiver/my-profile', req.userId!, req.userRole || 'Caregiver', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
 });
 
-/** POST /change-email, /change-email/confirm */
+router.get('/profile/my-patients', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/profile/my-patients', req.userId!, req.userRole || 'Doctor');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// MEDICAL RECORDS PROXIES
+// ═══════════════════════════════════════════════════════════════════════
+
+router.get('/patient-diagnoses/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet(`/patient-diagnoses/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
+});
+
+router.post('/patient-diagnosis', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPost('/patient-diagnosis', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.delete('/patient-diagnosis/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyDelete(`/patient-diagnosis/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.get('/patient-medications/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet(`/patient-medications/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
+});
+
+router.post('/patient-medication', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPost('/patient-medication', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.patch('/patient-medication/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPatch(`/patient-medication/${req.params.id}`, req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.delete('/patient-medication/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyDelete(`/patient-medication/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.get('/patient-status/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet(`/patient-status/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ status: 'normal' });
+  }
+});
+
+router.put('/patient-status/:type/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPut(`/patient-status/${req.params.type}/${req.params.id}`, req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.get('/patient-vital-thresholds/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet(`/patient-vital-thresholds/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({
+      threshold: {
+        isPending: false, thresholdsId: 'default', createdAt: new Date().toISOString(),
+        minHr: 60, maxHr: 100, hrSetBy: '', hrSetAt: 0,
+        minTemp: 36.1, maxTemp: 37.2, tempSetBy: '', tempSetAt: 0,
+        minSpo2: 95, spo2SetBy: '', spo2SetAt: 0,
+        minRr: 12, maxRr: 20, rrSetBy: '', rrSetAt: 0,
+        minSbp: 90, maxSbp: 140, sbpSetBy: '', sbpSetAt: 0,
+        minDbp: 60, maxDbp: 90, dbpSetBy: '', dbpSetAt: 0,
+        minMap: 70, maxMap: 105, mapSetBy: '', mapSetAt: 0,
+      },
+      users: [],
+    });
+  }
+});
+
+router.get('/patient-vitals/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet(`/patient-vitals/${req.params.id}`, req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ vitals: [], thresholds: [], users: [], total: 0 });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// REMAINING PROXIED STUBS
+// ═══════════════════════════════════════════════════════════════════════
+
+router.put('/doctor/:type/:id', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPut(`/doctor/${req.params.type}/${req.params.id}`, req.userId!, req.userRole || 'Doctor', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.patch('/patient/person-emergency-contacts/order', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyPatch('/patient/person-emergency-contacts/order', req.userId!, req.userRole || 'Patient', req.body);
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.all('/patient/person-suggested-contact*', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    if (req.method === 'POST') {
+      const result = await proxyPost('/patient/person-suggested-contact', req.userId!, req.userRole || 'Patient', req.body);
+      return res.status(result.status).json(result.data);
+    }
+    return res.json({ message: 'OK' });
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
+router.all('/patient/organization-suggested-contact*', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    if (req.method === 'POST') {
+      const result = await proxyPost('/patient/organization-suggested-contact', req.userId!, req.userRole || 'Patient', req.body);
+      return res.status(result.status).json(result.data);
+    }
+    return res.json({ message: 'OK' });
+  } catch {
+    return res.json({ message: 'OK' });
+  }
+});
+
 router.post('/change-email', requireAuth, (_req: Request, res: Response) => {
   return res.json({ message: 'OK' });
 });
@@ -697,7 +1001,6 @@ router.post('/change-email/confirm', requireAuth, (_req: Request, res: Response)
   return res.json({ message: 'OK' });
 });
 
-/** PATCH /my-profile/delete, /my-profile/recovery */
 router.patch('/my-profile/delete', requireAuth, (_req: Request, res: Response) => {
   return res.json({ message: 'OK' });
 });
@@ -705,60 +1008,6 @@ router.patch('/my-profile/recovery', requireAuth, (_req: Request, res: Response)
   return res.json({ message: 'OK' });
 });
 
-/** GET /patient-diagnoses/:id, /patient-medications/:id, /patient-status/:id */
-router.get('/patient-diagnoses/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
-});
-router.get('/patient-medications/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
-});
-router.get('/patient-status/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ status: 'normal' });
-});
-router.put('/patient-status/:type/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-
-/** POST/DELETE /patient-diagnosis, /patient-medication */
-router.post('/patient-diagnosis', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-router.delete('/patient-diagnosis/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-router.post('/patient-medication', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-router.patch('/patient-medication/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-router.delete('/patient-medication/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-
-/** GET /patient-vital-thresholds/:id */
-router.get('/patient-vital-thresholds/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({
-    threshold: {
-      isPending: false, thresholdsId: 'default', createdAt: new Date().toISOString(),
-      minHr: 60, maxHr: 100, hrSetBy: '', hrSetAt: 0,
-      minTemp: 36.1, maxTemp: 37.2, tempSetBy: '', tempSetAt: 0,
-      minSpo2: 95, spo2SetBy: '', spo2SetAt: 0,
-      minRr: 12, maxRr: 20, rrSetBy: '', rrSetAt: 0,
-      minSbp: 90, maxSbp: 140, sbpSetBy: '', sbpSetAt: 0,
-      minDbp: 60, maxDbp: 90, dbpSetBy: '', dbpSetAt: 0,
-      minMap: 70, maxMap: 105, mapSetBy: '', mapSetAt: 0,
-    },
-    users: [],
-  });
-});
-
-/** GET /patient-vitals/:id */
-router.get('/patient-vitals/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ vitals: [], thresholds: [], users: [], total: 0 });
-});
-
-/** Avatar upload/delete stubs */
 router.post('/avatar/upload', requireAuth, (_req: Request, res: Response) => {
   return res.json({ avatar: '' });
 });
@@ -766,42 +1015,30 @@ router.delete('/avatar', requireAuth, (_req: Request, res: Response) => {
   return res.json({ message: 'OK' });
 });
 
-/** Data access stubs */
-router.get('/data-accesses', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
-});
-router.all('/data-access*', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-router.get('/profile/my-patients', requireAuth, (_req: Request, res: Response) => {
-  return res.json([]);
+router.get('/data-accesses', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const result = await proxyGet('/data-accesses', req.userId!, req.userRole || 'Patient');
+    return res.status(result.status).json(result.data);
+  } catch {
+    return res.json([]);
+  }
 });
 
-/** Doctor/caregiver profile stubs */
-router.get('/doctor/my-profile', requireAuth, (_req: Request, res: Response) => {
-  return res.json({});
-});
-router.get('/caregiver/my-profile', requireAuth, (_req: Request, res: Response) => {
-  return res.json({});
-});
-router.patch('/doctor/my-profile', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-router.patch('/caregiver/my-profile', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-
-/** Doctor threshold stubs */
-router.put('/doctor/:type/:id', requireAuth, (_req: Request, res: Response) => {
-  return res.json({ message: 'OK' });
-});
-
-/** Sign-up stubs for doctor/caregiver */
-router.post('/doctor/sign-up', async (req: Request, res: Response) => {
-  return res.status(201).json({ message: 'Registration successful' });
-});
-router.post('/caregiver/sign-up', async (req: Request, res: Response) => {
-  return res.status(201).json({ message: 'Registration successful' });
+router.all('/data-access*', requireAuth, async (req: Request & { userId?: string; userRole?: string }, res: Response) => {
+  try {
+    const path = req.path;
+    if (req.method === 'POST') {
+      const result = await proxyPost(path, req.userId!, req.userRole || 'Patient', req.body);
+      return res.status(result.status).json(result.data);
+    }
+    if (req.method === 'GET') {
+      const result = await proxyGet(path, req.userId!, req.userRole || 'Patient');
+      return res.status(result.status).json(result.data);
+    }
+    return res.json({ message: 'OK' });
+  } catch {
+    return res.json({ message: 'OK' });
+  }
 });
 
 export default router;

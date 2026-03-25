@@ -32,6 +32,7 @@ interface Props {
 export function PatientVitalCard({ patient, mask, onDetails }: Props) {
   const { latestVitals: v } = patient
   const cfg = STATUS_CFG[v.status] || STATUS_CFG.normal
+  const hasVitals = v.timestamp !== null
 
   return (
     <div className={`rounded-xl border ${cfg.border} ${cfg.bg} p-5 hover:shadow-md transition-shadow`}>
@@ -48,7 +49,13 @@ export function PatientVitalCard({ patient, mask, onDetails }: Props) {
       </div>
 
       {/* Vitals grid */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
+      {!hasVitals && (
+        <div className="bg-white/70 rounded-lg p-4 mb-3 text-center">
+          <i className="pi pi-clock text-slate-300 text-2xl mb-1 block" />
+          <span className="text-xs text-slate-400">Awaiting vitals data</span>
+        </div>
+      )}
+      <div className={`grid grid-cols-2 gap-2 mb-3 ${!hasVitals ? 'hidden' : ''}`}>
         <div className="bg-white/70 rounded-lg p-2">
           <div className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Heart Rate</div>
           <div className={`text-lg font-bold font-mono mt-0.5 ${vitalColor(v.heartRate, 60, 100)}`}>

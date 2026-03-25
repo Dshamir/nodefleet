@@ -1,15 +1,20 @@
-import {Controller, Get, Put, Delete, Param, Body, Query, HttpCode, HttpStatus, NotFoundException, CanActivate, ExecutionContext, Injectable, UseGuards, UnauthorizedException} from '@nestjs/common';
+import {randomUUID} from 'crypto';
+import {Controller, Get, Post, Put, Delete, Param, Body, Query, HttpCode, HttpStatus, NotFoundException, BadRequestException, ConflictException, CanActivate, ExecutionContext, Injectable, UseGuards, UnauthorizedException} from '@nestjs/common';
 import {ApiTags, ApiBearerAuth, ApiResponse, ApiQuery} from '@nestjs/swagger';
 import {InjectRepository} from '@nestjs/typeorm';
-import {Repository, Like, MoreThanOrEqual} from 'typeorm';
+import {Repository, Like, MoreThanOrEqual, DataSource} from 'typeorm';
 import {UserModel} from 'infrastructure/modules/auth/models';
+import {PatientMetadataModel} from 'infrastructure/modules/auth/models/patient-metadata.model';
+import {DoctorMetadataModel} from 'infrastructure/modules/auth/models/doctor-metadata.model';
+import {CaregiverMetadataModel} from 'infrastructure/modules/auth/models/caregiver-metadata.model';
 import {VitalModel} from 'infrastructure/modules/vital/models';
+import {PatientVitalThresholdsModel} from 'infrastructure/modules/patient-vital-thresholds/models/patient-vital-thresholds.model';
 import {PatientDataAccessModel} from 'infrastructure/modules/patient-data-access/models';
 import {PersonEmergencyContactModel} from 'infrastructure/modules/emergency-contact/models/person-emergency-contact.model';
 import {PatientDiagnosisModel} from 'infrastructure/modules/patient-diagnosis/models/patient-diagnosis.model';
 import {PatientMedicationModel} from 'infrastructure/modules/patient-medication/models/patient-medication.model';
 import {PatientStatusModel} from 'infrastructure/modules/patient-status/models/patient-status.model';
-import {UserRoleEnum} from 'domain/constants/user.const';
+import {UserRoleEnum, UserRoleLabelEnum, UserMeasurementSystemEnum} from 'domain/constants/user.const';
 import {ConfigService} from '@nestjs/config';
 
 @Injectable()
@@ -53,7 +58,88 @@ export class AdminController {
         private readonly patientMedicationRepository: Repository<PatientMedicationModel>,
         @InjectRepository(PatientStatusModel)
         private readonly patientStatusRepository: Repository<PatientStatusModel>,
+        private readonly dataSource: DataSource,
     ) {}
+
+    @Post('users')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiResponse({status: HttpStatus.CREATED, description: 'Create user with role-specific metadata'})
+    async createUser(@Body() body: any) {
+        const {email, firstName, lastName, phone, role, roleLabel, password, metadata} = body;
+
+        if (!email || !firstName || !lastName || !role) {
+            throw new BadRequestException('email, firstName, lastName, and role are required');
+        }
+
+        const normalizedRole = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
+        if (!Object.values(UserRoleEnum).includes(normalizedRole as UserRoleEnum)) {
+            throw new BadRequestException(`Invalid role: ${role}. Must be Patient, Doctor, Caregiver, or Gateway`);
+        }
+
+        const existing = await this.userRepository.findOne({where: {email: email.toLowerCase()}});
+        if (existing) {
+            throw new ConflictException('User with this email already exists');
+        }
+
+        const queryRunner = this.dataSource.createQueryRunner();
+        await queryRunner.connect();
+        await queryRunner.startTransaction();
+
+        try {
+            const user = new UserModel();
+            user.id = randomUUID();
+            user.email = email.toLowerCase();
+            user.firstName = firstName;
+            user.lastName = lastName;
+            user.phone = phone || '';
+            user.role = normalizedRole;
+            user.roleLabel = roleLabel || normalizedRole;
+            user.avatar = null;
+            user.deletedAt = null;
+            user.passwordUpdatedAt = Math.floor(Date.now() / 1000);
+            user.measurementSystem = UserMeasurementSystemEnum.Metric;
+            user.createdAt = new Date().toISOString();
+
+            const savedUser = await queryRunner.manager.save(UserModel, user);
+
+            if (normalizedRole === UserRoleEnum.Patient) {
+                const pm = new PatientMetadataModel();
+                pm.userId = savedUser.id;
+                pm.dob = metadata?.dob ? new Date(metadata.dob) : new Date('1990-01-01');
+                pm.gender = metadata?.gender || 'Other';
+                pm.heightCm = metadata?.heightCm || 170;
+                pm.weightKg = metadata?.weightKg || 70;
+                pm.heightIn = metadata?.heightIn || Math.round((metadata?.heightCm || 170) / 2.54);
+                pm.weightLb = metadata?.weightLb || Math.round((metadata?.weightKg || 70) * 2.205);
+                await queryRunner.manager.save(PatientMetadataModel, pm);
+
+                const thresholds = PatientVitalThresholdsModel.getModelWithDefaultValues();
+                thresholds.patientUserId = savedUser.id;
+                thresholds.createdAt = new Date().toISOString();
+                await queryRunner.manager.save(PatientVitalThresholdsModel, thresholds);
+            } else if (normalizedRole === UserRoleEnum.Doctor) {
+                const dm = new DoctorMetadataModel();
+                dm.userId = savedUser.id;
+                dm.institution = metadata?.institution || '';
+                dm.specialty = metadata?.specialty || '';
+                await queryRunner.manager.save(DoctorMetadataModel, dm);
+            } else if (normalizedRole === UserRoleEnum.Caregiver) {
+                const cm = new CaregiverMetadataModel();
+                cm.userId = savedUser.id;
+                cm.institution = metadata?.institution || '';
+                await queryRunner.manager.save(CaregiverMetadataModel, cm);
+            }
+
+            await queryRunner.commitTransaction();
+
+            return {userId: savedUser.id, email: savedUser.email, role: savedUser.role};
+        } catch (err) {
+            await queryRunner.rollbackTransaction();
+            throw err;
+        } finally {
+            await queryRunner.release();
+        }
+    }
 
     @Get('patients')
     @HttpCode(HttpStatus.OK)
@@ -391,6 +477,86 @@ export class AdminController {
             totalMedications,
             totalEmergencyContacts,
         };
+    }
+
+    @Get('thresholds/:patientId')
+    @HttpCode(HttpStatus.OK)
+    @ApiResponse({status: HttpStatus.OK, description: 'Vital thresholds for a patient'})
+    async getPatientThresholds(@Param('patientId') patientId: string) {
+        const thresholds = await this.dataSource.getRepository(PatientVitalThresholdsModel).findOne({
+            where: {patientUserId: patientId},
+        });
+        if (!thresholds) {
+            throw new NotFoundException('No thresholds found for this patient');
+        }
+        return thresholds;
+    }
+
+    @Post('vitals/bulk')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiResponse({status: HttpStatus.CREATED, description: 'Bulk insert vitals bypassing patient auth'})
+    async bulkInsertVitals(@Body() body: {userId: string; thresholdsId: string; vitals: any[]}) {
+        const {userId, thresholdsId, vitals} = body;
+        if (!userId || !thresholdsId || !Array.isArray(vitals) || vitals.length === 0) {
+            throw new BadRequestException('userId, thresholdsId, and non-empty vitals array are required');
+        }
+
+        const entities = vitals.map((v) => {
+            const vital = new VitalModel();
+            vital.userId = userId;
+            vital.thresholdsId = thresholdsId;
+            vital.timestamp = v.timestamp;
+            vital.hr = v.hr ?? null;
+            vital.isHrNormal = v.isHrNormal ?? null;
+            vital.temp = v.temp ?? null;
+            vital.isTempNormal = v.isTempNormal ?? null;
+            vital.spo2 = v.spo2 ?? null;
+            vital.isSpo2Normal = v.isSpo2Normal ?? null;
+            vital.rr = v.rr ?? null;
+            vital.isRrNormal = v.isRrNormal ?? null;
+            vital.sbp = v.sbp ?? null;
+            vital.isSbpNormal = v.isSbpNormal ?? null;
+            vital.dbp = v.dbp ?? null;
+            vital.isDbpNormal = v.isDbpNormal ?? null;
+            vital.fall = v.fall ?? null;
+            vital.fallType = v.fallType ?? null;
+            return vital;
+        });
+
+        const saved = await this.vitalRepository.save(entities);
+        return {inserted: saved.length};
+    }
+
+    @Post('data-access')
+    @HttpCode(HttpStatus.CREATED)
+    @ApiResponse({status: HttpStatus.CREATED, description: 'Create data access relationship'})
+    async createDataAccess(@Body() body: {patientUserId: string; grantedUserId: string; grantedEmail: string; patientEmail: string; direction?: string; status?: string}) {
+        const {patientUserId, grantedUserId, grantedEmail, patientEmail} = body;
+        if (!patientUserId || !grantedUserId) {
+            throw new BadRequestException('patientUserId and grantedUserId are required');
+        }
+
+        const existing = await this.patientDataAccessRepository.findOne({
+            where: {patientUserId, grantedUserId},
+        });
+        if (existing) {
+            return {message: 'Relationship already exists', id: existing.id};
+        }
+
+        const relationship = this.patientDataAccessRepository.create({
+            id: randomUUID(),
+            patientUserId,
+            grantedUserId,
+            grantedEmail: grantedEmail || '',
+            patientEmail: patientEmail || '',
+            direction: body.direction || 'FromPatient',
+            status: body.status || 'Approved',
+            createdAt: new Date().toISOString(),
+            lastInviteSentAt: 0,
+        });
+
+        const saved = await this.patientDataAccessRepository.save(relationship);
+        return {id: saved.id, message: 'Relationship created'};
     }
 
     @Put('users/:id')
