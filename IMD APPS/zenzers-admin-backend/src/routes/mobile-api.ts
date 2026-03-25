@@ -40,7 +40,14 @@ function signRefreshToken(userId: string) {
   return jwt.sign({ sub: userId, type: 'refresh' }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_TTL });
 }
 
+/** Map DB role strings to the PascalCase values the mobile app's RolesType enum expects */
+function normalizeRole(role: string): string {
+  const map: Record<string, string> = { patient: 'Patient', doctor: 'Doctor', caregiver: 'Caregiver' };
+  return map[role?.toLowerCase()] || role || 'Patient';
+}
+
 function userToResponse(user: any) {
+  const role = normalizeRole(user.role);
   return {
     avatar: user.avatar || '',
     deletedAt: user.deletedAt || null,
@@ -48,9 +55,9 @@ function userToResponse(user: any) {
     email: user.email,
     firstName: user.firstName,
     lastName: user.lastName,
-    roleLabel: user.roleLabel || user.role || 'patient',
+    roleLabel: user.roleLabel || role,
     phone: user.phone || '',
-    role: user.role || 'patient',
+    role,
     passwordUpdatedAt: user.passwordUpdatedAt || 0,
     measurementSystem: user.measurementSystem || 'Metric',
   };
