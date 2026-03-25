@@ -468,19 +468,34 @@ router.get('/vitals/absolute', (_req: Request, res: Response) => {
 router.get('/patient/my-vital-thresholds', requireAuth, async (req: Request & { userId?: string }, res: Response) => {
   try {
     const db = await getDb();
-    const thresholds = await db.collection('mobileVitalThresholds').findOne({ userId: new ObjectId(req.userId) });
-    if (!thresholds) {
-      // Return defaults
-      return res.json({
-        heartRate: { min: 60, max: 100 },
-        oxygenSaturation: { min: 95 },
-        temperature: { min: 36.1, max: 37.2 },
-        respirationRate: { min: 12, max: 20 },
-        meanArterialPressure: { min: 70, max: 105 },
-        bloodPressure: { minSbp: 90, maxSbp: 140, minDbp: 60, maxDbp: 90 },
-      });
-    }
-    return res.json(thresholds);
+    const stored = await db.collection('mobileVitalThresholds').findOne({ userId: new ObjectId(req.userId) });
+    // App expects { threshold: { isPending, minHr, maxHr, ... }, users: [] }
+    const threshold = {
+      isPending: false,
+      thresholdsId: stored?._id?.toString() || 'default',
+      createdAt: stored?.createdAt || new Date().toISOString(),
+      minHr: stored?.heartRate?.min ?? 60,
+      maxHr: stored?.heartRate?.max ?? 100,
+      hrSetBy: '', hrSetAt: 0,
+      minTemp: stored?.temperature?.min ?? 36.1,
+      maxTemp: stored?.temperature?.max ?? 37.2,
+      tempSetBy: '', tempSetAt: 0,
+      minSpo2: stored?.oxygenSaturation?.min ?? 95,
+      spo2SetBy: '', spo2SetAt: 0,
+      minRr: stored?.respirationRate?.min ?? 12,
+      maxRr: stored?.respirationRate?.max ?? 20,
+      rrSetBy: '', rrSetAt: 0,
+      minSbp: stored?.bloodPressure?.minSbp ?? 90,
+      maxSbp: stored?.bloodPressure?.maxSbp ?? 140,
+      sbpSetBy: '', sbpSetAt: 0,
+      minDbp: stored?.bloodPressure?.minDbp ?? 60,
+      maxDbp: stored?.bloodPressure?.maxDbp ?? 90,
+      dbpSetBy: '', dbpSetAt: 0,
+      minMap: stored?.meanArterialPressure?.min ?? 70,
+      maxMap: stored?.meanArterialPressure?.max ?? 105,
+      mapSetBy: '', mapSetAt: 0,
+    };
+    return res.json({ threshold, users: [] });
   } catch {
     return res.status(500).json({ message: 'Internal server error' });
   }
@@ -585,12 +600,13 @@ router.get('/diagnoses', async (_req: Request, res: Response) => {
     const db = await getDb();
     const diagnoses = await db.collection('diagnoses').find({}).toArray();
     if (diagnoses.length === 0) {
+      // App expects { diagnosisName } per Diagnosis type
       return res.json([
-        { _id: '1', name: 'Hypertension' },
-        { _id: '2', name: 'Diabetes Type 2' },
-        { _id: '3', name: 'Asthma' },
-        { _id: '4', name: 'COPD' },
-        { _id: '5', name: 'Heart Failure' },
+        { _id: '1', diagnosisName: 'Hypertension' },
+        { _id: '2', diagnosisName: 'Diabetes Type 2' },
+        { _id: '3', diagnosisName: 'Asthma' },
+        { _id: '4', diagnosisName: 'COPD' },
+        { _id: '5', diagnosisName: 'Heart Failure' },
       ]);
     }
     return res.json(diagnoses);
@@ -607,12 +623,13 @@ router.get('/medications', async (_req: Request, res: Response) => {
     const db = await getDb();
     const medications = await db.collection('medications').find({}).toArray();
     if (medications.length === 0) {
+      // App expects { genericName, brandNames } per MedicationList type
       return res.json([
-        { _id: '1', name: 'Metformin', dosageUnit: 'mg' },
-        { _id: '2', name: 'Lisinopril', dosageUnit: 'mg' },
-        { _id: '3', name: 'Atorvastatin', dosageUnit: 'mg' },
-        { _id: '4', name: 'Metoprolol', dosageUnit: 'mg' },
-        { _id: '5', name: 'Salbutamol', dosageUnit: 'mcg' },
+        { _id: '1', genericName: 'Metformin', brandNames: 'Glucophage', dosageUnit: 'mg' },
+        { _id: '2', genericName: 'Lisinopril', brandNames: 'Zestril', dosageUnit: 'mg' },
+        { _id: '3', genericName: 'Atorvastatin', brandNames: 'Lipitor', dosageUnit: 'mg' },
+        { _id: '4', genericName: 'Metoprolol', brandNames: 'Lopressor', dosageUnit: 'mg' },
+        { _id: '5', genericName: 'Salbutamol', brandNames: 'Ventolin', dosageUnit: 'mcg' },
       ]);
     }
     return res.json(medications);
@@ -722,11 +739,17 @@ router.delete('/patient-medication/:id', requireAuth, (_req: Request, res: Respo
 /** GET /patient-vital-thresholds/:id */
 router.get('/patient-vital-thresholds/:id', requireAuth, (_req: Request, res: Response) => {
   return res.json({
-    heartRate: { min: 60, max: 100 },
-    oxygenSaturation: { min: 95 },
-    temperature: { min: 36.1, max: 37.2 },
-    respirationRate: { min: 12, max: 20 },
-    bloodPressure: { minSbp: 90, maxSbp: 140, minDbp: 60, maxDbp: 90 },
+    threshold: {
+      isPending: false, thresholdsId: 'default', createdAt: new Date().toISOString(),
+      minHr: 60, maxHr: 100, hrSetBy: '', hrSetAt: 0,
+      minTemp: 36.1, maxTemp: 37.2, tempSetBy: '', tempSetAt: 0,
+      minSpo2: 95, spo2SetBy: '', spo2SetAt: 0,
+      minRr: 12, maxRr: 20, rrSetBy: '', rrSetAt: 0,
+      minSbp: 90, maxSbp: 140, sbpSetBy: '', sbpSetAt: 0,
+      minDbp: 60, maxDbp: 90, dbpSetBy: '', dbpSetAt: 0,
+      minMap: 70, maxMap: 105, mapSetBy: '', mapSetAt: 0,
+    },
+    users: [],
   });
 });
 
