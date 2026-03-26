@@ -31,6 +31,8 @@ export interface PatientVitalNode {
     spO2: number | null
     timestamp: string | null
     status: 'normal' | 'warning' | 'critical'
+    deviceSerial: string | null
+    relayType: string | null
   }
 }
 
@@ -60,6 +62,22 @@ export interface TelemetryLogEntry {
   isSpo2Normal: boolean | null
   isTempNormal: boolean | null
   isRrNormal: boolean | null
+  deviceSerial: string | null
+  relayType: string | null
+  relayId: string | null
+}
+
+export interface DeviceBindingEntry {
+  id: string
+  deviceSerial: string
+  userId: string
+  relayType: string
+  relayId: string
+  boundAt: string
+}
+
+export interface DeviceBindingsResponse {
+  bindings: DeviceBindingEntry[]
 }
 
 export interface TelemetryResponse {

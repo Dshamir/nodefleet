@@ -82,6 +82,25 @@ export function PatientVitalCard({ patient, mask, onDetails }: Props) {
         </div>
       </div>
 
+      {/* Provenance badge */}
+      {hasVitals && (
+        <div className="flex items-center gap-2 mb-3 text-[10px]">
+          {v.deviceSerial ? (
+            <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full" title="Device serial">
+              <i className="pi pi-microchip mr-1" />{v.deviceSerial}
+            </span>
+          ) : (
+            <span className="bg-slate-100 text-slate-400 px-2 py-0.5 rounded-full italic">Unknown provenance</span>
+          )}
+          {v.relayType && (
+            <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+              <i className={`pi ${v.relayType === 'gateway' ? 'pi-server' : 'pi-mobile'} mr-1`} />
+              {v.relayType}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Doctor / Caregiver */}
       <div className="text-xs text-slate-500 mb-3 space-y-1">
         <div>

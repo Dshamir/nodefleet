@@ -208,6 +208,16 @@ export function PatientDetailPage() {
               const c = STATUS_CFG[row.status] || STATUS_CFG.normal
               return <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${c.bg} ${c.text}`}><span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />{c.label}</span>
             }} />
+            <Column field="deviceSerial" header="Device" body={(row: TelemetryLogEntry) =>
+              row.deviceSerial
+                ? <span className="font-mono text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded">{row.deviceSerial}</span>
+                : <span className="text-[10px] text-slate-300 italic">unknown</span>
+            } />
+            <Column field="relayType" header="Relay" body={(row: TelemetryLogEntry) =>
+              row.relayType
+                ? <span className="text-[10px]"><i className={`pi ${row.relayType === 'gateway' ? 'pi-server' : 'pi-mobile'} mr-1`} />{row.relayType}</span>
+                : <span className="text-[10px] text-slate-300">-</span>
+            } />
           </DataTable>
         )}
       </div>

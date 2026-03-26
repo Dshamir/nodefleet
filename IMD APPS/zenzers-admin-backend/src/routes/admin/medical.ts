@@ -274,6 +274,8 @@ async function fetchCompositePatients(authHeader: string) {
         spO2: (v as any).spo2 ?? null,
         timestamp: (v as any)._ts,
         status,
+        deviceSerial: (v as any).deviceSerial ?? null,
+        relayType: (v as any).relayType ?? null,
       },
     });
   }
@@ -414,6 +416,9 @@ router.get('/vitals/:patientId/telemetry', async (req: Request, res: Response) =
         isSpo2Normal: v.isSpo2Normal ?? null,
         isTempNormal: v.isTempNormal ?? null,
         isRrNormal: v.isRrNormal ?? null,
+        deviceSerial: v.deviceSerial ?? null,
+        relayType: v.relayType ?? null,
+        relayId: v.relayId ?? null,
       };
     });
 
@@ -607,6 +612,14 @@ router.get('/gateways', (req, res) => proxyGet('/admin/gateways', req, res, (raw
   })),
   total: raw.total || 0,
 })));
+
+// ---------------------------------------------------------------------------
+// Device Bindings — proxy to Medical API /device-binding
+// ---------------------------------------------------------------------------
+router.get('/device-bindings', (req, res) => proxyGet('/device-binding', req, res));
+router.get('/device-bindings/:serial', (req, res) => proxyGet(`/device-binding/${req.params.serial}`, req, res));
+router.post('/device-bindings', (req, res) => proxyMutation('POST', '/device-binding', req, res));
+router.delete('/device-bindings/:serial', (req, res) => proxyMutation('DELETE', `/device-binding/${req.params.serial}`, req, res));
 
 // ---------------------------------------------------------------------------
 // Medical Stats (for dashboard)

@@ -26,6 +26,31 @@ async function waitForService(url: string, name: string, maxRetries = 60): Promi
   throw new Error(`${name} not available after ${maxRetries} retries`);
 }
 
+async function bindDevice(deviceSerial: string, userId: string, token: string): Promise<void> {
+  try {
+    const url = `${config.medicalApiUrl}/device-binding`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        deviceSerial,
+        relayType: 'gateway',
+        relayId: config.gatewayEmail,
+      }),
+    });
+    if (res.ok) {
+      console.log(`[Binding] Device ${deviceSerial} → user ${userId}`);
+    } else {
+      console.warn(`[Binding] Failed for ${deviceSerial}: ${res.status}`);
+    }
+  } catch (err: any) {
+    console.warn(`[Binding] Error for ${deviceSerial}: ${err.message}`);
+  }
+}
+
 async function main(): Promise<void> {
   console.log('=== RPi Gateway Emulator ===');
   console.log(`Medical API: ${config.medicalApiUrl}`);
@@ -48,7 +73,7 @@ async function main(): Promise<void> {
   console.log(`[Startup] Seeded: gateway=${seedResult.gatewayUserId}, patients=${seedResult.patients.length}`);
 
   // Step 3: Authenticate as gateway
-  await authenticate();
+  const token = await authenticate();
 
   // Step 4: Set up patient mapper
   const patientMapper = new PatientMapper();
@@ -59,8 +84,22 @@ async function main(): Promise<void> {
   const connectedDevices = await deviceConnector.connectToDevices();
   console.log(`[Startup] Connected to ${connectedDevices.length} devices`);
 
+  // Step 5b: Wait briefly for device-info messages, then store serials + send pairing + create bindings
+  await new Promise(r => setTimeout(r, 2000));
+  for (const deviceIndex of connectedDevices) {
+    const serial = deviceConnector.getDeviceSerial(deviceIndex);
+    if (serial) {
+      patientMapper.setDeviceSerial(deviceIndex, serial);
+      const userId = patientMapper.getPatientUserId(deviceIndex);
+      if (userId) {
+        deviceConnector.sendPair(deviceIndex, userId);
+        await bindDevice(serial, userId, token);
+      }
+    }
+  }
+
   // Step 6: Set up vitals collection + submission
-  const collector = new VitalsCollector(patientMapper);
+  const collector = new VitalsCollector(patientMapper, seedResult.gatewayUserId);
   const wsPublisher = new WebSocketPublisher(patientMapper);
 
   // Try to connect WS publisher (non-fatal if it fails)
@@ -72,9 +111,10 @@ async function main(): Promise<void> {
 
   // Step 7: Listen for vitals from devices
   deviceConnector.on('vitals', (deviceIndex: number, vitals: DeviceVitals) => {
-    collector.addReading(deviceIndex, vitals);
+    const serial = deviceConnector.getDeviceSerial(deviceIndex);
+    collector.addReading(deviceIndex, vitals, serial);
     // Also publish real-time via WebSocket
-    wsPublisher.publish(deviceIndex, vitals);
+    wsPublisher.publish(deviceIndex, vitals, serial);
   });
 
   // Step 8: Periodic batch submission

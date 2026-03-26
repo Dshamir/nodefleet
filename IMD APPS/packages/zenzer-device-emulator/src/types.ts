@@ -9,6 +9,7 @@ export interface VitalReading {
   fall: boolean;
   fallType: number | null;
   timestamp: number;
+  deviceSerial?: string;
 }
 
 export interface PatientProfile {
@@ -26,9 +27,25 @@ export interface DeviceAdvertisement {
   id: number;
   name: string;
   rssi: number;
+  serialNumber: string;
+  macAddress: string;
+  firmwareVersion: string;
+  modelNumber: string;
 }
 
-export type DeviceState = 'ADVERTISING' | 'CONNECTED' | 'DISCONNECTED';
+export type DeviceState = 'ADVERTISING' | 'CONNECTED' | 'PAIRED' | 'DISCONNECTED';
+
+export interface DeviceInfoService {
+  modelNumber: string;
+  serialNumber: string;
+  firmwareRevision: string;
+  hardwareRevision: string;
+  manufacturerName: string;
+}
+
+export interface DatasetUpload {
+  readings: VitalReading[];
+}
 
 export interface BleNotification {
   characteristic: string;
@@ -36,7 +53,8 @@ export interface BleNotification {
 }
 
 export interface BleWriteCommand {
-  action: 'write';
-  characteristic: string;
-  data: number[];
+  action: 'write' | 'pair' | 'unpair';
+  characteristic?: string;
+  data?: number[];
+  userId?: string;
 }

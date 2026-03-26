@@ -7,10 +7,19 @@ interface DeviceAd {
   id: number;
   name: string;
   rssi: number;
+  serialNumber?: string;
+}
+
+interface DeviceInfo {
+  serialNumber: string;
+  macAddress: string;
+  firmwareVersion: string;
+  modelNumber: string;
 }
 
 export class DeviceConnector extends EventEmitter {
   private deviceSockets: Map<number, WebSocket> = new Map();
+  private deviceSerials: Map<number, string> = new Map();
   private scanSocket: WebSocket | null = null;
 
   async connectToDevices(): Promise<number[]> {
@@ -62,6 +71,18 @@ export class DeviceConnector extends EventEmitter {
     });
   }
 
+  getDeviceSerial(deviceId: number): string | undefined {
+    return this.deviceSerials.get(deviceId);
+  }
+
+  sendPair(deviceId: number, userId: string): void {
+    const ws = this.deviceSockets.get(deviceId);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'pair', userId }));
+      console.log(`[DeviceConnector] Sent pair command to device ${deviceId} for user ${userId}`);
+    }
+  }
+
   private async connectToDevice(deviceId: number): Promise<void> {
     return new Promise((resolve, reject) => {
       const deviceUrl = `${config.deviceEmulatorUrl}/device/${deviceId}`;
@@ -76,6 +97,20 @@ export class DeviceConnector extends EventEmitter {
       ws.on('message', (data: Buffer) => {
         try {
           const msg = JSON.parse(data.toString());
+
+          // Capture device-info message (sent as first message on connect)
+          if (msg.type === 'device-info' && msg.serialNumber) {
+            this.deviceSerials.set(deviceId, msg.serialNumber);
+            console.log(`[DeviceConnector] Device ${deviceId} serial: ${msg.serialNumber}`);
+            return;
+          }
+
+          // Capture pair acknowledgement
+          if (msg.type === 'pair-ack') {
+            console.log(`[DeviceConnector] Device ${deviceId} pair-ack: ${msg.status}`);
+            return;
+          }
+
           if (msg.type === 'vitals') {
             this.emit('vitals', deviceId, msg as DeviceVitals);
           }

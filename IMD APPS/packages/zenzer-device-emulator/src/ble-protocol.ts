@@ -7,6 +7,16 @@ export const BLE_CHARACTERISTICS = {
   FIRMWARE: '00002a26-0000-1000-8000-00805f9b34fb',
 } as const;
 
+// GATT Device Information Service (0x180A)
+export const DEVICE_INFO_SERVICE = '0000180a-0000-1000-8000-00805f9b34fb';
+export const DEVICE_INFO_CHARACTERISTICS = {
+  MODEL_NUMBER: '00002a24-0000-1000-8000-00805f9b34fb',
+  SERIAL_NUMBER: '00002a25-0000-1000-8000-00805f9b34fb',
+  FIRMWARE_REVISION: '00002a26-0000-1000-8000-00805f9b34fb',
+  HARDWARE_REVISION: '00002a27-0000-1000-8000-00805f9b34fb',
+  MANUFACTURER_NAME: '00002a29-0000-1000-8000-00805f9b34fb',
+} as const;
+
 export function encodeHeartRate(hr: number, rr?: number): number[] {
   const result = [Math.round(hr)];
   if (rr !== undefined) result.push(Math.round(rr));

@@ -18,13 +18,20 @@ export class DeviceManager {
     return this.devices.get(id);
   }
 
+  getDeviceBySerial(serial: string): Device | undefined {
+    for (const device of this.devices.values()) {
+      if (device.serialNumber === serial) return device;
+    }
+    return undefined;
+  }
+
   getAllDevices(): Device[] {
     return Array.from(this.devices.values());
   }
 
   getAdvertisingDevices() {
     return this.getAllDevices()
-      .filter(d => d.state === 'ADVERTISING' || d.state === 'CONNECTED')
+      .filter(d => d.state === 'ADVERTISING' || d.state === 'CONNECTED' || d.state === 'PAIRED')
       .map(d => d.getAdvertisement());
   }
 }

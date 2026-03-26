@@ -11,18 +11,21 @@ interface BufferedReading {
   dbp: number;
   fall: boolean;
   fallType: number | null;
+  deviceSerial?: string;
 }
 
 export class VitalsCollector {
   // Buffer: deviceIndex → array of readings since last flush
   private buffer: Map<number, BufferedReading[]> = new Map();
   private patientMapper: PatientMapper;
+  private gatewayUserId: string;
 
-  constructor(patientMapper: PatientMapper) {
+  constructor(patientMapper: PatientMapper, gatewayUserId: string) {
     this.patientMapper = patientMapper;
+    this.gatewayUserId = gatewayUserId;
   }
 
-  addReading(deviceIndex: number, vitals: DeviceVitals): void {
+  addReading(deviceIndex: number, vitals: DeviceVitals, deviceSerial?: string): void {
     if (!this.buffer.has(deviceIndex)) {
       this.buffer.set(deviceIndex, []);
     }
@@ -36,6 +39,7 @@ export class VitalsCollector {
       dbp: Math.round(vitals.dbp),
       fall: vitals.fall,
       fallType: vitals.fallType,
+      deviceSerial: deviceSerial || undefined,
     });
   }
 
@@ -52,7 +56,12 @@ export class VitalsCollector {
       }
 
       if (readings.length > 0) {
-        payload.vitals.push({ userId, vitals: readings });
+        payload.vitals.push({
+          userId,
+          relayType: 'gateway',
+          relayId: this.gatewayUserId,
+          vitals: readings,
+        });
       }
     }
 

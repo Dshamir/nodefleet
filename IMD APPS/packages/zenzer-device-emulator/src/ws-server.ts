@@ -14,8 +14,11 @@ export function createWsServer(deviceManager: DeviceManager): http.Server {
     : path.join(__dirname, '..', 'src', 'public');
 
   const server = http.createServer((req, res) => {
+    const url = req.url || '/';
+    const method = req.method || 'GET';
+
     // Health check endpoint for Docker
-    if (req.url === '/health') {
+    if (url === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
@@ -25,8 +28,85 @@ export function createWsServer(deviceManager: DeviceManager): http.Server {
       return;
     }
 
+    // GET /device-info/{id} — device identity info
+    const deviceInfoMatch = url.match(/^\/device-info\/(\d+)$/);
+    if (deviceInfoMatch && method === 'GET') {
+      const deviceId = parseInt(deviceInfoMatch[1], 10);
+      const device = deviceManager.getDevice(deviceId);
+      if (!device) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Device ${deviceId} not found` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(device.getDeviceInfo()));
+      return;
+    }
+
+    // POST /device/{id}/dataset — upload biometric dataset
+    const datasetPostMatch = url.match(/^\/device\/(\d+)\/dataset$/);
+    if (datasetPostMatch && method === 'POST') {
+      const deviceId = parseInt(datasetPostMatch[1], 10);
+      const device = deviceManager.getDevice(deviceId);
+      if (!device) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Device ${deviceId} not found` }));
+        return;
+      }
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const readings = JSON.parse(body);
+          if (!Array.isArray(readings) || readings.length === 0) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Body must be a non-empty array of VitalReading' }));
+            return;
+          }
+          device.loadDataset(readings);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ status: 'loaded', readings: readings.length }));
+        } catch {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+
+    // DELETE /device/{id}/dataset — revert to synthetic
+    const datasetDeleteMatch = url.match(/^\/device\/(\d+)\/dataset$/);
+    if (datasetDeleteMatch && method === 'DELETE') {
+      const deviceId = parseInt(datasetDeleteMatch[1], 10);
+      const device = deviceManager.getDevice(deviceId);
+      if (!device) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Device ${deviceId} not found` }));
+        return;
+      }
+      device.clearDataset();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'cleared', mode: 'synthetic' }));
+      return;
+    }
+
+    // GET /device/{id}/dataset/status — check mode
+    const datasetStatusMatch = url.match(/^\/device\/(\d+)\/dataset\/status$/);
+    if (datasetStatusMatch && method === 'GET') {
+      const deviceId = parseInt(datasetStatusMatch[1], 10);
+      const device = deviceManager.getDevice(deviceId);
+      if (!device) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Device ${deviceId} not found` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(device.getDatasetStatus()));
+      return;
+    }
+
     // Serve the watch UI
-    if (req.url === '/' || req.url === '/index.html') {
+    if (url === '/' || url === '/index.html') {
       const htmlPath = path.join(publicDir, 'index.html');
       if (fs.existsSync(htmlPath)) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -90,6 +170,17 @@ function handleDeviceConnection(
   console.log(`[WS] Client connected to device ${device.name}`);
   device.connect();
 
+  // Send device-info as first message
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({
+      type: 'device-info',
+      serialNumber: device.serialNumber,
+      macAddress: device.macAddress,
+      firmwareVersion: device.firmwareVersion,
+      modelNumber: device.modelNumber,
+    }));
+  }
+
   // Forward BLE notifications to the WS client
   const onNotification = (notification: BleNotification) => {
     if (ws.readyState === WebSocket.OPEN) {
@@ -107,11 +198,31 @@ function handleDeviceConnection(
   device.on('notification', onNotification);
   device.on('vitals', onVitals);
 
-  // Handle write commands from client (for mobile handshake emulation)
+  // Handle write commands from client (for mobile handshake + pairing emulation)
   ws.on('message', (data: Buffer) => {
     try {
       const msg = JSON.parse(data.toString());
-      if (msg.action === 'write') {
+
+      if (msg.action === 'pair' && msg.userId) {
+        device.pair(msg.userId);
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'pair-ack',
+            serialNumber: device.serialNumber,
+            status: 'paired',
+            userId: msg.userId,
+          }));
+        }
+      } else if (msg.action === 'unpair') {
+        device.unpair();
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'pair-ack',
+            serialNumber: device.serialNumber,
+            status: 'unpaired',
+          }));
+        }
+      } else if (msg.action === 'write') {
         console.log(`[WS] Write to ${device.name} char ${msg.characteristic}: [${msg.data}]`);
         // Acknowledge — in real BLE the device would process the command
       }

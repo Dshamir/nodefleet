@@ -14,6 +14,8 @@ export interface VitalReading {
 export interface GatewayVitalPayload {
   vitals: Array<{
     userId: string;
+    relayType?: string;
+    relayId?: string;
     vitals: Array<{
       timestamp: number;
       hr?: number;
@@ -24,6 +26,7 @@ export interface GatewayVitalPayload {
       dbp?: number;
       fall?: boolean;
       fallType?: number | null;
+      deviceSerial?: string;
     }>;
   }>;
 }
@@ -34,6 +37,7 @@ export interface PatientMapping {
   email: string;
   firstName: string;
   lastName: string;
+  deviceSerial?: string;
 }
 
 export interface SeedResult {

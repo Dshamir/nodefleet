@@ -90,6 +90,7 @@ const MedicalRecordsPage = lazy(() => import('./pages/medical-records/MedicalRec
 const EmergencyContactsPage = lazy(() => import('./pages/emergency-contacts/EmergencyContactsPage').then(m => ({ default: m.EmergencyContactsPage })))
 const DataAccessPage = lazy(() => import('./pages/data-access/DataAccessPage').then(m => ({ default: m.DataAccessPage })))
 const GatewayDevicesPage = lazy(() => import('./pages/gateway-devices/GatewayDevicesPage').then(m => ({ default: m.GatewayDevicesPage })))
+const DeviceBindingsPage = lazy(() => import('./pages/device-bindings/DeviceBindingsPage').then(m => ({ default: m.DeviceBindingsPage })))
 
 function PageLoader() {
   return (
@@ -226,6 +227,7 @@ function App() {
             <Route path="emergency-contacts" element={<EmergencyContactsPage />} />
             <Route path="data-access" element={<DataAccessPage />} />
             <Route path="gateway-devices" element={<GatewayDevicesPage />} />
+            <Route path="device-bindings" element={<DeviceBindingsPage />} />
 
             {/* Users & Auth */}
             <Route path="access-control" element={<AccessControlPage />} />

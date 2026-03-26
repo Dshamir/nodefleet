@@ -10,6 +10,7 @@ import { Config } from 'react-native-config'
 
 import {
   setBattery,
+  setDeviceSerial,
   setHeartRate,
   setRespirationRate,
   setSpo,
@@ -100,7 +101,10 @@ function connectToEmulatedDevice(dispatch: Dispatch, deviceId: number, baseUrl: 
   deviceSocket.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data as string)
-      if (msg.type === 'vitals') {
+      if (msg.type === 'device-info' && msg.serialNumber) {
+        dispatch(setDeviceSerial(msg.serialNumber))
+        console.log(`[Simulator] Device serial: ${msg.serialNumber}`)
+      } else if (msg.type === 'vitals') {
         dispatchVitals(dispatch, msg as EmulatorVitals)
       }
     } catch {

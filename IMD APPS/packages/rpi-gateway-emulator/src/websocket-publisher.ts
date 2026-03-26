@@ -35,7 +35,7 @@ export class WebSocketPublisher {
     });
   }
 
-  publish(deviceIndex: number, vitals: DeviceVitals): void {
+  publish(deviceIndex: number, vitals: DeviceVitals, deviceSerial?: string): void {
     if (!this.socket?.connected) return;
 
     const userId = this.patientMapper.getPatientUserId(deviceIndex);
@@ -52,6 +52,7 @@ export class WebSocketPublisher {
       fall: vitals.fall,
       fallType: vitals.fallType,
       battery: vitals.battery,
+      deviceSerial: deviceSerial || undefined,
     });
   }
 

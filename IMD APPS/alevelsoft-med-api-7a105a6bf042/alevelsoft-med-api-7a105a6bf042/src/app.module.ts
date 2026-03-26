@@ -26,6 +26,7 @@ import {
     CliModule,
     EventsModule,
     AdminModule,
+    DeviceBindingModule,
 } from 'infrastructure/modules';
 import {AssignUserMiddleware} from 'presentation/middlewares/assign-user.middleware';
 import {EventEmitterModule} from '@nestjs/event-emitter';
@@ -55,6 +56,7 @@ const APP_MODULES_IMPORT = [
     CliModule,
     EventsModule,
     AdminModule,
+    DeviceBindingModule,
 ];
 
 const GUARDS = [AuthGuard, RolesGuard];
