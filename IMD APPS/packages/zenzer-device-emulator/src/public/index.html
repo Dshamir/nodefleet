@@ -335,6 +335,70 @@
   .log-entry.disconnect { color: #ef4444; }
   .log-entry.vitals { color: #444; }
   .log-entry.fall { color: #f59e0b; }
+
+  /* ── GATT Manifest Panel ── */
+  .gatt-btn {
+    margin-top: 4px;
+    padding: 3px 12px;
+    font-size: 9px;
+    border: 1px solid #2a2a3a;
+    border-radius: 10px;
+    background: transparent;
+    color: #8b5cf6;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .gatt-btn:hover {
+    background: #8b5cf6;
+    color: #0a0a0f;
+  }
+  .gatt-btn.active {
+    background: #8b5cf622;
+    border-color: #8b5cf6;
+  }
+  .gatt-panel {
+    display: none;
+    margin-top: 8px;
+    background: #111118;
+    border: 1px solid #1e1e2a;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    color: #6a6a7a;
+    line-height: 1.7;
+    text-align: left;
+    min-width: 280px;
+    max-width: 320px;
+  }
+  .gatt-panel.visible { display: block; }
+  .gatt-service {
+    margin-bottom: 6px;
+  }
+  .gatt-service-name {
+    color: #8b5cf6;
+    font-weight: 600;
+    font-size: 10px;
+  }
+  .gatt-char {
+    padding-left: 14px;
+    color: #888;
+  }
+  .gatt-char-value {
+    color: #ccc;
+  }
+  .gatt-state-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 6px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .gatt-state-badge.advertising { background: #f59e0b22; color: #f59e0b; }
+  .gatt-state-badge.connected { background: #10b98122; color: #10b981; }
+  .gatt-state-badge.paired { background: #3b82f622; color: #3b82f6; }
 </style>
 </head>
 <body>
@@ -420,6 +484,8 @@
       </div>
       <div class="watch-profile">${profile}</div>
       <button class="pair-btn" id="btn-${id}" onclick="window.toggleDevice(${id})">Connect</button>
+      <button class="gatt-btn" id="gatt-btn-${id}" onclick="window.toggleGatt(${id})">GATT</button>
+      <div class="gatt-panel" id="gatt-panel-${id}"></div>
     `;
     return container;
   }
@@ -500,7 +566,12 @@
     d.ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.type === 'vitals') {
+        if (msg.type === 'device-info') {
+          d.serialNumber = msg.serialNumber;
+          d.macAddress = msg.macAddress;
+          d.firmwareVersion = msg.firmwareVersion;
+          d.modelNumber = msg.modelNumber;
+        } else if (msg.type === 'vitals') {
           d.vitals = msg;
           updateVitals(id, msg);
           updateTime(id);
@@ -534,6 +605,65 @@
       d.ws.close();
     }
   }
+
+  const gattVisible = {};  // id -> boolean
+
+  window.toggleGatt = function(id) {
+    gattVisible[id] = !gattVisible[id];
+    const panel = document.getElementById(`gatt-panel-${id}`);
+    const btn = document.getElementById(`gatt-btn-${id}`);
+    if (panel) panel.classList.toggle('visible', gattVisible[id]);
+    if (btn) btn.classList.toggle('active', gattVisible[id]);
+    if (gattVisible[id]) fetchAndRenderGatt(id);
+  };
+
+  function fetchAndRenderGatt(id) {
+    fetch(`/device/${id}/state`)
+      .then(r => r.json())
+      .then(info => {
+        const panel = document.getElementById(`gatt-panel-${id}`);
+        if (!panel) return;
+        const d = devices[id];
+        const v = d?.vitals || {};
+        const stateClass = (info.state || 'advertising').toLowerCase();
+        const pairedLine = info.pairedUserId
+          ? `│  Paired User: ${info.pairedUserId.substring(0, 12)}...`
+          : `│  Paired User: —`;
+
+        panel.innerHTML = `
+          <div class="gatt-service">
+            <div class="gatt-service-name">┌ Device Information (0x180A)</div>
+            <div class="gatt-char">│  Model Number (0x2A24): <span class="gatt-char-value">${info.modelNumber || 'ZENZERS-V1'}</span></div>
+            <div class="gatt-char">│  Serial Number (0x2A25): <span class="gatt-char-value">${info.serialNumber || '—'}</span></div>
+            <div class="gatt-char">│  Firmware Rev (0x2A26): <span class="gatt-char-value">${info.firmwareVersion || '1.0.0'}</span></div>
+            <div class="gatt-char">│  Hardware Rev (0x2A27): <span class="gatt-char-value">1.0</span></div>
+            <div class="gatt-char">│  Manufacturer (0x2A29): <span class="gatt-char-value">ZENZERS Medical</span></div>
+          </div>
+          <div class="gatt-service">
+            <div class="gatt-service-name">┌ Vital Signs</div>
+            <div class="gatt-char">│  Heart Rate (0x2A37): <span class="gatt-char-value">${v.hr ? Math.round(v.hr) + ' bpm' : '—'}</span></div>
+            <div class="gatt-char">│  Temperature (0x2A1C): <span class="gatt-char-value">${v.temp ? v.temp.toFixed(1) + '°C' : '—'}</span></div>
+            <div class="gatt-char">│  SpO2 (0x2A5F): <span class="gatt-char-value">${v.spo2 ? v.spo2 + '%' : '—'}</span></div>
+            <div class="gatt-char">│  Battery (0x2A19): <span class="gatt-char-value">${v.battery != null ? v.battery + '%' : '—'}</span></div>
+            <div class="gatt-char">│  Fall Alert (0x2A46): <span class="gatt-char-value">${v.fall ? 'Yes' : 'No'}</span></div>
+          </div>
+          <div class="gatt-service">
+            <div class="gatt-service-name">┌ Device State</div>
+            <div class="gatt-char">│  State: <span class="gatt-state-badge ${stateClass}">${info.state || 'ADVERTISING'}</span></div>
+            <div class="gatt-char">${pairedLine}</div>
+            <div class="gatt-char">│  Dataset: <span class="gatt-char-value">${info.datasetStatus?.mode || 'synthetic'}</span></div>
+          </div>
+        `;
+      })
+      .catch(() => {});
+  }
+
+  // Refresh visible GATT panels every 2s
+  setInterval(() => {
+    for (const id of Object.keys(gattVisible)) {
+      if (gattVisible[id]) fetchAndRenderGatt(parseInt(id));
+    }
+  }, 2000);
 
   window.toggleDevice = function(id) {
     const d = devices[id];

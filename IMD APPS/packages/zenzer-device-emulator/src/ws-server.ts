@@ -105,6 +105,30 @@ export function createWsServer(deviceManager: DeviceManager): http.Server {
       return;
     }
 
+    // GET /device/{id}/state — returns device state, paired user, dataset status
+    const deviceStateMatch = url.match(/^\/device\/(\d+)\/state$/);
+    if (deviceStateMatch && method === 'GET') {
+      const deviceId = parseInt(deviceStateMatch[1], 10);
+      const device = deviceManager.getDevice(deviceId);
+      if (!device) {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: `Device ${deviceId} not found` }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        state: device.state,
+        pairedUserId: device.pairedUserId,
+        datasetStatus: device.getDatasetStatus(),
+        serialNumber: device.serialNumber,
+        modelNumber: device.modelNumber,
+        firmwareVersion: device.firmwareVersion,
+        macAddress: device.macAddress,
+        lastReading: device.getLastReading(),
+      }));
+      return;
+    }
+
     // Serve the watch UI
     if (url === '/' || url === '/index.html') {
       const htmlPath = path.join(publicDir, 'index.html');
