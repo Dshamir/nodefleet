@@ -479,6 +479,17 @@ The mobile app reads \`API_URL\` from \`.env\`:
 | Local (physical device) | \`http://<HOST_LAN_IP>:43001\` |
 | Staging | \`https://api-staging.zenzers.com\` |
 | Production | \`https://api.zenzers.com\` |
+
+> **Important:** In dev mode (\\\`__DEV__\\\`), the app hardcodes \\\`BASE_URL = 'http://10.0.2.2:43001/api'\\\` in \\\`src/constants/constants.ts\\\`. The \\\`.env\\\` \\\`API_URL\\\` is only used in production builds. If Docker port mappings change, update \\\`constants.ts\\\` directly.
+
+### Docker Port Mapping Reference
+
+| Service | Internal Port | External (Host) Port |
+|---------|:---:|:---:|
+| admin-backend | 3001 | **43001** |
+| medical-api | 3002 | **43002** |
+| device-emulator (WS) | 8765 | **48765** |
+| keycloak | 8080 | **48080** |
 `,
   },
 ];

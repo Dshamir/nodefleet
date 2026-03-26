@@ -14,7 +14,7 @@ import { FilterParamsType } from '../stores/slices/vitals.slice'
 import { BaseUser } from '../stores/types/profile.types'
 import { Colors } from '../styles'
 
-export const BASE_URL = __DEV__ ? 'http://10.0.2.2:3001/api' : Config.API_URL
+export const BASE_URL = __DEV__ ? 'http://10.0.2.2:43001/api' : Config.API_URL
 
 export const isIOS = Platform.OS === 'ios'
 export const WIDTH = Dimensions.get('screen').width
