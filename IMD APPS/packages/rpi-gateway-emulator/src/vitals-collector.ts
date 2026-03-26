@@ -28,12 +28,12 @@ export class VitalsCollector {
     }
     this.buffer.get(deviceIndex)!.push({
       timestamp: vitals.timestamp,
-      hr: vitals.hr,
-      spo2: vitals.spo2,
-      temp: vitals.temp,
-      rr: vitals.rr,
-      sbp: vitals.sbp,
-      dbp: vitals.dbp,
+      hr: Math.round(vitals.hr),
+      spo2: Math.round(vitals.spo2),
+      temp: Math.round(vitals.temp),
+      rr: Math.round(vitals.rr),
+      sbp: Math.round(vitals.sbp),
+      dbp: Math.round(vitals.dbp),
       fall: vitals.fall,
       fallType: vitals.fallType,
     });

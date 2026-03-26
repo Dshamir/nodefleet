@@ -140,11 +140,16 @@ Emulates a Raspberry Pi gateway device in a senior home facility. On startup it 
 
 \`\`\`
 1. Wait for medical-api + admin-backend + device-emulator (retry loop)
-2. Seed: Create gateway user + N patient users in Keycloak + Medical DB + MongoDB
+2. Seed:
+   a. Ensure Keycloak realm roles exist (Gateway, Patient)
+   b. Create gateway user + N patient users in Keycloak
+   c. Assign realm roles to each user (required for JWT realm_access.roles)
+   d. Create users in Medical DB via POST /admin/users (X-Internal-Auth, keycloakUserId as PK)
+   e. Store password hashes in MongoDB (mobile auth)
 3. Auth: Sign in as gateway user → JWT token (auto-refresh)
 4. Connect: WS client to each device in the device emulator
 5. Loop:
-   a. Collect vitals from device WS connections
+   a. Collect vitals from device WS connections (values rounded to integers)
    b. Batch and POST /gateway/vitals every 10s
    c. Emit real-time via socket.io /ws/current-vitals
    d. Send heartbeat every 60s
@@ -161,7 +166,9 @@ Emulates a Raspberry Pi gateway device in a senior home facility. On startup it 
 | Patient 3 | \`patient3@zenzers-emulator.local\` | Patient | \`Patient3Emul8!\` |
 | Patient 4 | \`patient4@zenzers-emulator.local\` | Patient | \`Patient4Emul8!\` |
 
-All created in **triple store:** Keycloak (SSO), Medical DB (PostgreSQL via admin endpoint), MongoDB (mobile password hash).
+All created in **triple store:** Keycloak (SSO + realm roles), Medical DB (PostgreSQL via Medical API admin endpoint with keycloakUserId as PK), MongoDB (mobile password hash).
+
+> **Important:** Users are created in the Medical API directly (\`POST /admin/users\` with \`X-Internal-Auth\`), NOT via the admin-backend. The \`keycloakUserId\` is passed so the Medical DB user ID matches the Keycloak \`sub\` JWT claim — this is required for \`AuthedUserService\` user lookup. Realm roles (not just attributes) must be assigned in Keycloak for JWT \`realm_access.roles\` to include the role.
 
 ### Gateway Vitals Submission Format
 
@@ -291,14 +298,15 @@ Gateway batches every 10s = 6 POSTs/min with ~10 vitals each.
 |-----------|-------------|
 | **Medical API** | Gateway submits vitals via \`POST /gateway/vitals\` (same as real RPi gateway) |
 | **Medical API WS** | Gateway publishes real-time via \`/ws/current-vitals\` \`messageToServer\` event |
-| **Keycloak** | Gateway + patients created in realm \`zenzers\` with proper roles |
+| **Keycloak** | Gateway + patients created in realm \`zenzers\` with realm roles (Gateway, Patient) assigned via Admin REST API |
 | **Admin Console** | Vitals Monitor page shows emulated patients with live-updating vitals |
 | **BLE Protocol** | Device emulator uses real Zenzer BLE characteristic UUIDs and byte encoding |
-| **Mobile App** | Not directly connected — emulator replaces the mobile BLE connection with WS |
+| **Mobile App** | Chart.tsx merges realtime WebSocket points with history data; poll interval reduced to 10s |
+| **Mobile App Hook** | \`use-realtime-chart-data.ts\` subscribes to \`messageToClient\` for live chart updates |
 
 ---
 
-*Last updated: 2026-03-25*
+*Last updated: 2026-03-26*
 `,
   },
   {
@@ -366,7 +374,7 @@ The device emulator acknowledges but does not require the handshake — the gate
 
 ---
 
-*Last updated: 2026-03-25*
+*Last updated: 2026-03-26*
 `,
   },
 ];

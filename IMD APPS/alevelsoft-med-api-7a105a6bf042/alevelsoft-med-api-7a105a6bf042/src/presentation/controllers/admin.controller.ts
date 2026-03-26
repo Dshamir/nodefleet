@@ -65,7 +65,7 @@ export class AdminController {
     @HttpCode(HttpStatus.CREATED)
     @ApiResponse({status: HttpStatus.CREATED, description: 'Create user with role-specific metadata'})
     async createUser(@Body() body: any) {
-        const {email, firstName, lastName, phone, role, roleLabel, password, metadata} = body;
+        const {email, firstName, lastName, phone, role, roleLabel, password, metadata, keycloakUserId} = body;
 
         if (!email || !firstName || !lastName || !role) {
             throw new BadRequestException('email, firstName, lastName, and role are required');
@@ -87,7 +87,7 @@ export class AdminController {
 
         try {
             const user = new UserModel();
-            user.id = randomUUID();
+            user.id = keycloakUserId || randomUUID();
             user.email = email.toLowerCase();
             user.firstName = firstName;
             user.lastName = lastName;

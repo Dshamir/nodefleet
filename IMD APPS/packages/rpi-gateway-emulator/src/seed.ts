@@ -42,6 +42,55 @@ async function getKeycloakAdminToken(): Promise<string> {
   return data.access_token;
 }
 
+async function ensureRealmRole(adminToken: string, roleName: string): Promise<void> {
+  // Check if role exists
+  const res = await fetch(
+    `${config.keycloakUrl}/admin/realms/zenzers/roles/${encodeURIComponent(roleName)}`,
+    { headers: { Authorization: `Bearer ${adminToken}` } },
+  );
+  if (res.ok) return;
+
+  // Create role
+  const createRes = await fetch(`${config.keycloakUrl}/admin/realms/zenzers/roles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+    body: JSON.stringify({ name: roleName }),
+  });
+  if (createRes.ok || createRes.status === 409) {
+    console.log(`[Seed] Ensured realm role: ${roleName}`);
+  } else {
+    console.warn(`[Seed] Failed to create realm role ${roleName}: ${createRes.status}`);
+  }
+}
+
+async function assignRealmRole(adminToken: string, userId: string, roleName: string): Promise<void> {
+  // Get role representation
+  const roleRes = await fetch(
+    `${config.keycloakUrl}/admin/realms/zenzers/roles/${encodeURIComponent(roleName)}`,
+    { headers: { Authorization: `Bearer ${adminToken}` } },
+  );
+  if (!roleRes.ok) {
+    console.warn(`[Seed] Role ${roleName} not found, skipping assignment`);
+    return;
+  }
+  const role = await roleRes.json() as { id: string; name: string };
+
+  // Assign role to user
+  const assignRes = await fetch(
+    `${config.keycloakUrl}/admin/realms/zenzers/users/${userId}/role-mappings/realm`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${adminToken}` },
+      body: JSON.stringify([{ id: role.id, name: role.name }]),
+    },
+  );
+  if (assignRes.ok || assignRes.status === 204) {
+    console.log(`[Seed] Assigned realm role ${roleName} to user ${userId}`);
+  } else {
+    console.warn(`[Seed] Failed to assign role: ${assignRes.status} ${await assignRes.text()}`);
+  }
+}
+
 async function createKeycloakUser(
   adminToken: string,
   email: string,
@@ -108,10 +157,10 @@ async function ensureMedicalApiUser(
   lastName: string,
   role: string,
 ): Promise<string> {
-  // Use admin-backend to create the user in the medical DB
+  // Use Medical API admin endpoint directly (supports X-Internal-Auth)
   try {
     const result = await httpRequest(
-      `${config.adminBackendUrl}/api/admin/users`,
+      `${config.medicalApiUrl}/admin/users`,
       {
         method: 'POST',
         headers: {
@@ -161,6 +210,10 @@ export async function seedEmulatorUsers(): Promise<SeedResult> {
 
   const adminToken = await getKeycloakAdminToken();
 
+  // 0. Ensure realm roles exist
+  await ensureRealmRole(adminToken, 'Gateway');
+  await ensureRealmRole(adminToken, 'Patient');
+
   // 1. Create gateway user
   const gatewayKcId = await createKeycloakUser(
     adminToken,
@@ -170,6 +223,7 @@ export async function seedEmulatorUsers(): Promise<SeedResult> {
     config.seniorHomeName,
     'Gateway',
   );
+  await assignRealmRole(adminToken, gatewayKcId, 'Gateway');
 
   await ensureMedicalApiUser(
     gatewayKcId,
@@ -196,6 +250,7 @@ export async function seedEmulatorUsers(): Promise<SeedResult> {
       nameEntry.lastName,
       'Patient',
     );
+    await assignRealmRole(adminToken, kcId, 'Patient');
 
     await ensureMedicalApiUser(
       kcId,
