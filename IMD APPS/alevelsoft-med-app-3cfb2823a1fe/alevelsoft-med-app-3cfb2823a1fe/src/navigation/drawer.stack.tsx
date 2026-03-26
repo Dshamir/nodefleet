@@ -9,7 +9,7 @@ import { checkIsAbnormalAverageValues } from 'src/helpers/check-abnormal-average
 import { handleFallType } from 'src/helpers/fall-helper'
 import { getMlPredictions } from 'src/helpers/get-ml-predictions'
 import { cleanTemporaryPpgData, getTemporaryPpgData } from 'src/screens/connect-ble/helpers/connect-device'
-import { isSimulationMode, startSimulation, stopSimulation } from 'src/screens/connect-ble/helpers/ws-device-simulator'
+import { isSimulationMode, startSimulationScan, stopSimulation } from 'src/screens/connect-ble/helpers/ws-device-simulator'
 import { EmergencyCall } from 'src/screens/emergency-call'
 import {
   useAppDispatch,
@@ -99,10 +99,10 @@ const DrawerStack = () => {
   useStartScanBle()
   useAutoReconnect()
 
-  // Connect to WebSocket device emulator when SIMULATION_MODE=1
+  // Start scanning for emulated devices when SIMULATION_MODE=1
   useEffect(() => {
     if (isSimulationMode()) {
-      startSimulation(dispatch)
+      startSimulationScan(dispatch)
       return () => stopSimulation(dispatch)
     }
   }, [dispatch])

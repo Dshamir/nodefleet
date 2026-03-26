@@ -11,6 +11,17 @@ export type IPeripheralDevices = {
   connected: Device[]
 }
 
+export interface SimulatedDevice {
+  id: number
+  name: string
+  serialNumber: string
+  macAddress: string
+  modelNumber: string
+  rssi: number
+}
+
+export type SimulationPairStatus = 'idle' | 'connecting' | 'pairing' | 'paired'
+
 type IConnectDevice = {
   isInternetConnected: boolean
   isEnabledScreens: boolean
@@ -40,6 +51,8 @@ type IConnectDevice = {
   ppgData: number[]
   logFilePath: string
   deviceSerial: string | null
+  simulatedDevices: SimulatedDevice[]
+  simulationPairStatus: SimulationPairStatus
 }
 
 const initialState: IConnectDevice = {
@@ -71,6 +84,8 @@ const initialState: IConnectDevice = {
   ppgData: [],
   logFilePath: '',
   deviceSerial: null,
+  simulatedDevices: [],
+  simulationPairStatus: 'idle',
 }
 
 const connectDeviceSlice = createSlice({
@@ -152,6 +167,8 @@ const connectDeviceSlice = createSlice({
       state.fall = initialState.fall
       state.respirationRateHex = initialState.respirationRateHex
       state.deviceSerial = initialState.deviceSerial
+      state.simulatedDevices = initialState.simulatedDevices
+      state.simulationPairStatus = initialState.simulationPairStatus
     },
     setBattery: (state, { payload }: PayloadAction<number | null>) => {
       state.battery = payload
@@ -195,6 +212,12 @@ const connectDeviceSlice = createSlice({
     setDeviceSerial: (state, { payload }: PayloadAction<string | null>) => {
       state.deviceSerial = payload
     },
+    setSimulatedDevices: (state, { payload }: PayloadAction<SimulatedDevice[]>) => {
+      state.simulatedDevices = payload
+    },
+    setSimulationPairStatus: (state, { payload }: PayloadAction<SimulationPairStatus>) => {
+      state.simulationPairStatus = payload
+    },
   },
 })
 
@@ -226,6 +249,8 @@ export const selectIsStrangeErrorBle = (state: RootState) => state.connectDevice
 export const selectPpgData = (state: RootState) => state.connectDevice.ppgData
 export const selectDeviceSerial = (state: RootState) => state.connectDevice.deviceSerial
 export const selectLogFilePath = (state: RootState) => state.connectDevice.logFilePath
+export const selectSimulatedDevices = (state: RootState) => state.connectDevice.simulatedDevices
+export const selectSimulationPairStatus = (state: RootState) => state.connectDevice.simulationPairStatus
 
 export const useDeviceSerial = () => useAppSelector(selectDeviceSerial)
 export const useLogFilePath = () => useAppSelector(selectLogFilePath)
@@ -255,6 +280,8 @@ export const useChar0003 = () => useAppSelector(selectChar0003)
 export const useChar0002 = () => useAppSelector(selectChar0002)
 export const useUserIdState = () => useAppSelector(selectUserIdState)
 export const useIsUserIdSet = () => useAppSelector(selectIsUserIdSet)
+export const useSimulatedDevices = () => useAppSelector(selectSimulatedDevices)
+export const useSimulationPairStatus = () => useAppSelector(selectSimulationPairStatus)
 
 export const {
   reducer: connectDeviceReducer,
@@ -290,5 +317,7 @@ export const {
     setLogFilePath,
     setFallType,
     setDeviceSerial,
+    setSimulatedDevices,
+    setSimulationPairStatus,
   },
 } = connectDeviceSlice

@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Linking, SectionList, Text, TouchableOpacity, View } from 'react-native'
+import { ActivityIndicator, Alert, Linking, SectionList, Text, TouchableOpacity, View } from 'react-native'
 import { BleManager, Device, Subscription } from 'react-native-ble-plx'
 import FastImage from 'react-native-fast-image'
 import RNFS from 'react-native-fs'
@@ -23,6 +23,7 @@ import {
   setIsEnabledScreens,
   setOtherDevices,
   setUserIdState,
+  SimulatedDevice,
   useActiveDeviceId,
   useChar0002,
   useChar0003,
@@ -34,6 +35,8 @@ import {
   useLogFilePath,
   useOtherDevices,
   usePublicKey,
+  useSimulatedDevices,
+  useSimulationPairStatus,
   useUserIdState,
 } from 'src/stores/slices/connect-device.slice'
 import { Colors } from 'src/styles'
@@ -41,7 +44,13 @@ import { Colors } from 'src/styles'
 import { connectDevice } from './helpers/connect-device'
 import { disconnectDevice } from './helpers/disconnect-device'
 import { startScanBle, stopScan } from './helpers/start-scan-ble'
-import { isSimulationMode } from './helpers/ws-device-simulator'
+import {
+  connectToDevice as connectToSimDevice,
+  disconnectSimulatedDevice,
+  isSimulationMode,
+  pairDevice,
+  startSimulationScan,
+} from './helpers/ws-device-simulator'
 import styles from './styles'
 
 export const bleManager = new BleManager()
@@ -52,7 +61,162 @@ const bleImage = require('src/assets/images/bluetooth.webp')
 const getOtherDevices = (otherDevices: Device[], connectedDevices: Device[]) =>
   [...otherDevices].filter((item) => item?.id !== connectedDevices[0]?.id)
 
+// ── Simulation Device List ──────────────────────────────────────────────
+const SimulationDeviceList = () => {
+  const insets = useSafeAreaInsets()
+  const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>()
+  const dispatch = useAppDispatch()
+  const simulatedDevices = useSimulatedDevices()
+  const pairStatus = useSimulationPairStatus()
+  const isConnected = useIsDeviceConnected()
+  const userId = useRegisteredUserId()
+  const [selectedDeviceId, setSelectedDeviceId] = useState<number | null>(null)
+
+  // After pairing succeeds, navigate to Vitals
+  useEffect(() => {
+    if (pairStatus === 'paired' && isConnected) {
+      const timer = setTimeout(() => navigation.navigate('Vitals'), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [pairStatus, isConnected, navigation])
+
+  // After device connects, send pair command
+  useEffect(() => {
+    if (isConnected && pairStatus === 'connecting' && userId) {
+      pairDevice(userId)
+    }
+  }, [isConnected, pairStatus, userId])
+
+  const handleSelectDevice = (device: SimulatedDevice) => {
+    setSelectedDeviceId(device.id)
+    connectToSimDevice(dispatch, device.id)
+  }
+
+  const handleDisconnect = () => {
+    setSelectedDeviceId(null)
+    disconnectSimulatedDevice(dispatch)
+    startSimulationScan(dispatch)
+  }
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      // @ts-ignore
+      header: () => (
+        <Header
+          leftIcon={faArrowLeft}
+          onLeftPress={() => navigation.navigate('Vitals')}
+          title="Connect Device"
+        />
+      ),
+    })
+  })
+
+  // If connected and paired, show connected state
+  if (isConnected && pairStatus === 'paired') {
+    const connDevice = simulatedDevices.find((d) => d.id === selectedDeviceId)
+    return (
+      <SafeAreaView style={[styles.container, { marginTop: -insets.top, marginBottom: -insets.bottom }]}>
+        <ConnectionLostLabel />
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={[styles.boldTextStyle, { color: '#4CAF50', marginBottom: 10 }]}>
+            Paired ✓
+          </Text>
+          <Text style={{ textAlign: 'center', color: '#666', marginBottom: 4 }}>
+            {connDevice?.name || 'Emulated Device'}
+          </Text>
+          <Text style={{ textAlign: 'center', color: '#999', fontSize: 12 }}>
+            {connDevice?.serialNumber || ''}
+          </Text>
+          <TouchableOpacity
+            style={{ marginTop: 20, paddingHorizontal: 24, paddingVertical: 10, backgroundColor: '#ef4444', borderRadius: 8 }}
+            onPress={handleDisconnect}
+            activeOpacity={0.7}>
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Disconnect</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  const isScanning = simulatedDevices.length === 0
+
+  return (
+    <SafeAreaView style={[styles.container, { marginTop: -insets.top, marginBottom: -insets.bottom }]}>
+      <ConnectionLostLabel />
+      {isScanning ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', gap: 16 }}>
+          <ActivityIndicator size="large" color={Colors.primaryBlue} />
+          <Text style={{ color: '#666', fontSize: 16 }}>Scanning for devices...</Text>
+        </View>
+      ) : (
+        <View style={{ flex: 1 }}>
+          <Text style={{ padding: 16, color: '#888', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
+            Available Devices ({simulatedDevices.length})
+          </Text>
+          {simulatedDevices.map((device) => {
+            const isSelected = selectedDeviceId === device.id
+            const isThisConnecting = isSelected && pairStatus === 'connecting'
+            const isThisPairing = isSelected && isConnected && pairStatus !== 'paired'
+
+            return (
+              <TouchableOpacity
+                key={device.id}
+                activeOpacity={0.6}
+                disabled={selectedDeviceId !== null}
+                onPress={() => handleSelectDevice(device)}
+                style={[
+                  styles.itemWrapper,
+                  isSelected && { backgroundColor: '#f0f7ff' },
+                ]}>
+                <View style={styles.item}>
+                  <Text style={styles.itemText}>{device.name}</Text>
+                  <Text style={{ color: '#999', fontSize: 12 }}>{device.serialNumber}</Text>
+                </View>
+                <View style={{ alignItems: 'flex-end' }}>
+                  {isThisConnecting && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color={Colors.primaryBlue} />
+                      <Text style={{ color: Colors.primaryBlue, fontSize: 12 }}>Connecting...</Text>
+                    </View>
+                  )}
+                  {isThisPairing && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <ActivityIndicator size="small" color="#f59e0b" />
+                      <Text style={{ color: '#f59e0b', fontSize: 12 }}>Pairing...</Text>
+                    </View>
+                  )}
+                  {!isSelected && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ color: '#ccc', fontSize: 11 }}>
+                        {device.rssi} dBm
+                      </Text>
+                      <FastImage
+                        source={bleImage}
+                        style={styles.icon}
+                      />
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            )
+          })}
+        </View>
+      )}
+    </SafeAreaView>
+  )
+}
+
+// ── BLE Device List (original) ──────────────────────────────────────────
 const ConnectBle = () => {
+  // In simulation mode, render the simulation device picker
+  if (isSimulationMode()) {
+    return <SimulationDeviceList />
+  }
+
+  return <BleDeviceList />
+}
+
+const BleDeviceList = () => {
   const insets = useSafeAreaInsets()
   const navigation = useNavigation<NativeStackNavigationProp<HomeStackParamList>>()
   const dispatch = useAppDispatch()
@@ -75,7 +239,6 @@ const ConnectBle = () => {
   const logFilePath = useLogFilePath()
 
   const handleSearch = async () => {
-    if (isSimulationMode()) return // Skip BLE scan in simulation mode
     if (!isBleScanning) {
       dispatch(setOtherDevices([]))
       await startScanBle(dispatch, otherDevices, connectedDevices, isBleScanning)
@@ -274,23 +437,6 @@ const ConnectBle = () => {
       />
     </TouchableOpacity>
   )
-
-  if (isSimulationMode() && isPeripheralConnected) {
-    return (
-      <SafeAreaView style={[styles.container, { marginTop: -insets.top, marginBottom: -insets.bottom }]}>
-        <ConnectionLostLabel />
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={[styles.boldTextStyle, { color: '#4CAF50', marginBottom: 10 }]}>
-            Simulation Mode Active
-          </Text>
-          <Text style={{ textAlign: 'center', color: '#666' }}>
-            Connected to Zenzer Device Emulator via WebSocket.{'\n'}
-            Receiving live vitals from virtual device.
-          </Text>
-        </View>
-      </SafeAreaView>
-    )
-  }
 
   return (
     <SafeAreaView style={[styles.container, { marginTop: -insets.top, marginBottom: -insets.bottom }]}>

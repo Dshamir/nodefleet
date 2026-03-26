@@ -4,6 +4,8 @@
  * Connects to the Zenzer Device Emulator over WebSocket and dispatches
  * vitals to Redux — same actions as real BLE notifications.
  * Activated when SIMULATION_MODE=true in .env.
+ *
+ * Flow: startSimulationScan → user picks device → connectToDevice → pair
  */
 import { Dispatch } from '@reduxjs/toolkit'
 import { Config } from 'react-native-config'
@@ -19,6 +21,8 @@ import {
   setIsDeviceConnected,
   setActiveDeviceId,
   setBloodPressure,
+  setSimulatedDevices,
+  setSimulationPairStatus,
 } from 'src/stores/slices/connect-device.slice'
 
 // Default: Android emulator → host machine at mapped Docker port
@@ -42,6 +46,15 @@ interface EmulatorVitals {
   timestamp: number
 }
 
+export interface SimulatedDevice {
+  id: number
+  name: string
+  serialNumber: string
+  macAddress: string
+  modelNumber: string
+  rssi: number
+}
+
 export function isSimulationMode(): boolean {
   return Boolean(Config.SIMULATION_MODE && +Config.SIMULATION_MODE)
 }
@@ -50,11 +63,16 @@ function getEmulatorUrl(): string {
   return Config.DEVICE_EMULATOR_URL || DEFAULT_EMULATOR_URL
 }
 
-export function startSimulation(dispatch: Dispatch): void {
+/**
+ * Start scanning for emulated devices (does NOT auto-connect).
+ * Discovered devices are dispatched to Redux for the UI to display.
+ */
+export function startSimulationScan(dispatch: Dispatch): void {
   const baseUrl = getEmulatorUrl()
-  console.log(`[Simulator] Connecting to device emulator at ${baseUrl}/scan`)
+  console.log(`[Simulator] Scanning for devices at ${baseUrl}/scan`)
 
   dispatch(setIsDeviceConnected(false))
+  dispatch(setSimulatedDevices([]))
 
   scanSocket = new WebSocket(`${baseUrl}/scan`)
 
@@ -64,14 +82,8 @@ export function startSimulation(dispatch: Dispatch): void {
 
   scanSocket.onmessage = (event) => {
     try {
-      const devices = JSON.parse(event.data as string)
-      if (devices.length > 0) {
-        // Connect to the first available device
-        const device = devices[0]
-        console.log(`[Simulator] Found device: ${device.name} (id=${device.id})`)
-        closeScan()
-        connectToEmulatedDevice(dispatch, device.id, baseUrl)
-      }
+      const devices: SimulatedDevice[] = JSON.parse(event.data as string)
+      dispatch(setSimulatedDevices(devices))
     } catch (err) {
       console.error('[Simulator] Scan parse error:', err)
     }
@@ -79,7 +91,6 @@ export function startSimulation(dispatch: Dispatch): void {
 
   scanSocket.onerror = (err) => {
     console.error('[Simulator] Scan error:', err)
-    scheduleReconnect(dispatch)
   }
 
   scanSocket.onclose = () => {
@@ -87,7 +98,14 @@ export function startSimulation(dispatch: Dispatch): void {
   }
 }
 
-function connectToEmulatedDevice(dispatch: Dispatch, deviceId: number, baseUrl: string): void {
+/**
+ * Connect to a specific emulated device chosen by the user.
+ */
+export function connectToDevice(dispatch: Dispatch, deviceId: number): void {
+  const baseUrl = getEmulatorUrl()
+  closeScan()
+  dispatch(setSimulationPairStatus('connecting'))
+
   console.log(`[Simulator] Connecting to device ${deviceId}`)
 
   deviceSocket = new WebSocket(`${baseUrl}/device/${deviceId}`)
@@ -106,6 +124,9 @@ function connectToEmulatedDevice(dispatch: Dispatch, deviceId: number, baseUrl: 
         console.log(`[Simulator] Device serial: ${msg.serialNumber}`)
       } else if (msg.type === 'vitals') {
         dispatchVitals(dispatch, msg as EmulatorVitals)
+      } else if (msg.type === 'pair-ack') {
+        console.log(`[Simulator] Pair acknowledged: ${msg.status}`)
+        dispatch(setSimulationPairStatus(msg.status === 'paired' ? 'paired' : 'idle'))
       }
     } catch {
       // Ignore non-JSON (BLE notification messages)
@@ -114,13 +135,47 @@ function connectToEmulatedDevice(dispatch: Dispatch, deviceId: number, baseUrl: 
 
   deviceSocket.onerror = (err) => {
     console.error(`[Simulator] Device ${deviceId} error:`, err)
+    dispatch(setSimulationPairStatus('idle'))
   }
 
   deviceSocket.onclose = () => {
     console.log(`[Simulator] Device ${deviceId} disconnected`)
     dispatch(setIsDeviceConnected(false))
-    scheduleReconnect(dispatch)
+    dispatch(setSimulationPairStatus('idle'))
   }
+}
+
+/**
+ * Send pair command to the currently connected emulated device.
+ */
+export function pairDevice(userId: string): void {
+  if (deviceSocket && deviceSocket.readyState === WebSocket.OPEN) {
+    deviceSocket.send(JSON.stringify({ action: 'pair', userId }))
+    console.log(`[Simulator] Sent pair command for user ${userId}`)
+  }
+}
+
+/**
+ * Disconnect from the current emulated device.
+ */
+export function disconnectSimulatedDevice(dispatch: Dispatch): void {
+  if (deviceSocket) {
+    deviceSocket.onclose = null
+    deviceSocket.close()
+    deviceSocket = null
+  }
+  dispatch(setIsDeviceConnected(false))
+  dispatch(setActiveDeviceId(null))
+  dispatch(setSimulationPairStatus('idle'))
+  dispatch(setDeviceSerial(null))
+  console.log('[Simulator] Device disconnected')
+}
+
+// --- Legacy API (kept for backward compatibility with drawer.stack.tsx) ---
+
+/** @deprecated Use startSimulationScan instead */
+export function startSimulation(dispatch: Dispatch): void {
+  startSimulationScan(dispatch)
 }
 
 function dispatchVitals(dispatch: Dispatch, vitals: EmulatorVitals): void {
@@ -146,15 +201,6 @@ function closeScan(): void {
   }
 }
 
-function scheduleReconnect(dispatch: Dispatch): void {
-  if (reconnectTimer) return
-  console.log('[Simulator] Reconnecting in 5s...')
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null
-    startSimulation(dispatch)
-  }, 5000)
-}
-
 export function stopSimulation(dispatch: Dispatch): void {
   if (reconnectTimer) {
     clearTimeout(reconnectTimer)
@@ -168,5 +214,7 @@ export function stopSimulation(dispatch: Dispatch): void {
   }
   dispatch(setIsDeviceConnected(false))
   dispatch(setActiveDeviceId(null))
+  dispatch(setSimulatedDevices([]))
+  dispatch(setSimulationPairStatus('idle'))
   console.log('[Simulator] Stopped')
 }
