@@ -104,7 +104,10 @@ Paginated telemetry log with all raw vital readings and normal-flag indicators.
       "isDbpNormal": true,
       "isSpo2Normal": true,
       "isTempNormal": true,
-      "isRrNormal": true
+      "isRrNormal": true,
+      "deviceSerial": "ZNZ-2026-A001",
+      "relayType": "gateway",
+      "relayId": "38b41c33-..."
     }
   ],
   "total": 200,
@@ -114,6 +117,8 @@ Paginated telemetry log with all raw vital readings and normal-flag indicators.
 \`\`\`
 
 **Cap:** Server-side limit of 500 records max to prevent memory spikes.
+
+> **Provenance fields** (\`deviceSerial\`, \`relayType\`, \`relayId\`) are nullable — legacy vitals show \`null\`. See the [Telemetry Provenance](/admin/dev-wiki/telemetry-provenance) article for full details.
 
 ### POST /admin/vitals/unmask-audit
 
