@@ -46,29 +46,42 @@ bool CameraModule::initializeCamera() {
     // Camera configuration for OV2640 or similar
     camera_config_t config;
     config.ledc_channel = LEDC_CHANNEL_0;
-    config.ledc_timer = LEDC_TIMER_0;
-    config.pin_d0 = CAMERA_D0;
-    config.pin_d1 = CAMERA_D1;
-    config.pin_d2 = CAMERA_D2;
-    config.pin_d3 = CAMERA_D3;
-    config.pin_d4 = CAMERA_D4;
-    config.pin_d5 = CAMERA_D5;
-    config.pin_d6 = CAMERA_D6;
-    config.pin_d7 = CAMERA_D7;
-    config.pin_xclk = CAMERA_XCLK;
-    config.pin_pclk = CAMERA_PCLK;
-    config.pin_vsync = CAMERA_VSYNC;
-    config.pin_href = CAMERA_HREF;
-    config.pin_scc_sda = CAMERA_SIOD;
-    config.pin_scc_scl = CAMERA_SIOC;
-    config.pin_pwdn = CAMERA_PWDN;
-    config.pin_reset = CAMERA_RESET;
+    config.ledc_timer   = LEDC_TIMER_0;
+    config.pin_d0       = CAM_PIN_Y2;
+    config.pin_d1       = CAM_PIN_Y3;
+    config.pin_d2       = CAM_PIN_Y4;
+    config.pin_d3       = CAM_PIN_Y5;
+    config.pin_d4       = CAM_PIN_Y6;
+    config.pin_d5       = CAM_PIN_Y7;
+    config.pin_d6       = CAM_PIN_Y8;
+    config.pin_d7       = CAM_PIN_Y9;
+    config.pin_xclk     = CAMERA_XCLK;
+    config.pin_pclk     = CAMERA_PCLK;
+    config.pin_vsync    = CAMERA_VSYNC;
+    config.pin_href     = CAMERA_HREF;
+    config.pin_sccb_sda = CAMERA_SIOD;
+    config.pin_sccb_scl = CAMERA_SIOC;
+    config.pin_pwdn     = CAMERA_PWDN;
+    config.pin_reset    = CAMERA_RESET;
     config.xclk_freq_hz = 20000000;
     config.pixel_format = PIXFORMAT_JPEG;
-    config.frame_size = FRAMESIZE_VGA;  // 640x480
-    config.jpeg_quality = 10;  // 10-63, lower is better quality
-    config.fb_count = 1;
-    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    config.frame_size   = FRAMESIZE_VGA;  // 640x480
+    config.jpeg_quality = 10;
+    config.fb_count     = 1;
+    config.fb_location  = CAMERA_FB_IN_PSRAM;
+    config.grab_mode    = CAMERA_GRAB_WHEN_EMPTY;
+
+    if (psramFound()) {
+        LOG_INFO("PSRAM found — using 2 frame buffers.");
+        config.fb_count  = 2;
+        config.grab_mode = CAMERA_GRAB_LATEST;
+    } else {
+        LOG_INFO("No PSRAM — falling back to DRAM, limiting to SVGA.");
+        config.fb_location = CAMERA_FB_IN_DRAM;
+        if (config.frame_size > FRAMESIZE_SVGA) {
+            config.frame_size = FRAMESIZE_SVGA;
+        }
+    }
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {

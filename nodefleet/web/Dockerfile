@@ -22,6 +22,7 @@ FROM base AS runner
 
 ENV NODE_ENV production
 
+RUN apk add --no-cache curl
 RUN addgroup -g 1001 -S nodejs
 RUN adduser -S nextjs -u 1001
 

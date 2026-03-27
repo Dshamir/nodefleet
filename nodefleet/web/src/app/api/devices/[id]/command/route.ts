@@ -3,8 +3,56 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { devices, deviceCommands, orgMembers } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { redis } from "@/lib/redis";
+
+// GET: List commands and sync their statuses from Redis
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get commands for this device
+    const commands = await db
+      .select()
+      .from(deviceCommands)
+      .where(eq(deviceCommands.deviceId, params.id))
+      .orderBy(desc(deviceCommands.createdAt))
+      .limit(50);
+
+    // Sync pending/sent command statuses from Redis
+    for (const cmd of commands) {
+      if (cmd.status === "pending" || cmd.status === "sent") {
+        const statusKey = `command:${cmd.id}:status`;
+        const statusStr = await redis.get(statusKey);
+        if (statusStr) {
+          const statusData = JSON.parse(statusStr);
+          if (statusData.status !== cmd.status) {
+            await db
+              .update(deviceCommands)
+              .set({
+                status: statusData.status,
+                result: statusData.result,
+                completedAt: new Date(),
+              })
+              .where(eq(deviceCommands.id, cmd.id));
+            cmd.status = statusData.status;
+          }
+        }
+      }
+    }
+
+    return NextResponse.json(commands);
+  } catch (error) {
+    console.error("Error fetching commands:", error);
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+  }
+}
 
 const sendCommandSchema = z.object({
   command: z.string().min(1).max(255),

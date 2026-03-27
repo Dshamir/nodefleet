@@ -1,15 +1,67 @@
 #include "websocket_client.h"
 #include "config.h"
 
-// Note: This implementation is a stub using HTTP fallback
-// For full WebSocket support, use WebSocketsClient library with WiFi
-// This provides the interface and HTTP fallback behavior
+// Static instance pointer for callback routing
+WebSocketClient* WebSocketClient::instance = nullptr;
 
 WebSocketClient::WebSocketClient(const String& server_host, uint16_t server_port, const String& endpoint)
     : server_host(server_host), server_port(server_port), endpoint(endpoint),
       connection_state(0), last_message_time(0), reconnect_attempts(0),
       last_reconnect_attempt(0), last_ping_time(0),
       on_message(nullptr), on_state_change(nullptr) {
+    instance = this;
+}
+
+// Static callback that routes to instance method
+void WebSocketClient::eventCallback(WStype_t type, uint8_t* payload, size_t length) {
+    if (instance) {
+        instance->onWebSocketEvent(type, payload, length);
+    }
+}
+
+void WebSocketClient::onWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+    switch (type) {
+        case WStype_DISCONNECTED:
+            LOG_WARN("WebSocket disconnected");
+            connection_state = 0;
+            if (on_state_change) {
+                on_state_change(connection_state);
+            }
+            break;
+
+        case WStype_CONNECTED:
+            LOG_INFO("WebSocket connected to: %s", (char*)payload);
+            connection_state = 2;
+            last_message_time = millis();
+            reconnect_attempts = 0;
+            if (on_state_change) {
+                on_state_change(connection_state);
+            }
+            break;
+
+        case WStype_TEXT:
+            LOG_VERBOSE("WebSocket received: %s", (char*)payload);
+            last_message_time = millis();
+            handleIncomingMessage(String((char*)payload));
+            break;
+
+        case WStype_PING:
+            LOG_VERBOSE("WebSocket PING received");
+            last_message_time = millis();
+            break;
+
+        case WStype_PONG:
+            LOG_VERBOSE("WebSocket PONG received");
+            last_message_time = millis();
+            break;
+
+        case WStype_ERROR:
+            LOG_ERROR("WebSocket error");
+            break;
+
+        default:
+            break;
+    }
 }
 
 bool WebSocketClient::connect(const String& device_token) {
@@ -22,26 +74,38 @@ bool WebSocketClient::connect(const String& device_token) {
         on_state_change(connection_state);
     }
 
-    // TODO: Implement actual WebSocket connection using WebSocketsClient library
-    // For now, we set connected state and will use HTTP fallback
+    // Build the path with token query parameter
+    String path = endpoint + "?token=" + device_token;
 
-    connection_state = 2;  // Connected
-    last_message_time = millis();
-    reconnect_attempts = 0;
+#if USE_SSL
+    // Use SSL for ngrok/production
+    webSocket.beginSSL(server_host.c_str(), 443, path.c_str());
+#else
+    // Use plain WebSocket for local development
+    webSocket.begin(server_host.c_str(), server_port, path.c_str());
+#endif
 
-    LOG_INFO("WebSocket connected");
+    // Register event handler
+    webSocket.onEvent(eventCallback);
 
-    if (on_state_change) {
-        on_state_change(connection_state);
-    }
+    // Enable auto-reconnect with 5 second interval
+    webSocket.setReconnectInterval(5000);
 
+    // Set heartbeat interval (ping every 15s, pong timeout 3s, disconnect after 2 missed)
+    webSocket.enableHeartbeat(15000, 3000, 2);
+
+#if USE_SSL
+    LOG_INFO("WebSocket connection initiated (WSS/SSL)");
+#else
+    LOG_INFO("WebSocket connection initiated (WS)");
+#endif
     return true;
 }
 
 bool WebSocketClient::disconnect() {
     LOG_INFO("Disconnecting WebSocket");
-
-    connection_state = 0;  // Disconnected
+    webSocket.disconnect();
+    connection_state = 0;
 
     if (on_state_change) {
         on_state_change(connection_state);
@@ -55,62 +119,52 @@ bool WebSocketClient::isConnected() {
 }
 
 bool WebSocketClient::reconnect() {
-    if (connection_state == 1) {
-        return false;  // Already connecting
-    }
-
-    uint32_t now = millis();
-    uint32_t delay = getReconnectDelay();
-
-    if (now - last_reconnect_attempt < delay) {
-        return false;  // Wait before reconnecting
-    }
-
-    LOG_INFO("Attempting to reconnect (attempt %d)", reconnect_attempts + 1);
-    last_reconnect_attempt = now;
-    reconnect_attempts++;
-
-    return connect(device_token);
+    // The WebSocketsClient library handles reconnection automatically
+    // via setReconnectInterval(). This method is kept for API compatibility.
+    return true;
 }
 
 bool WebSocketClient::sendHeartbeat(float battery_voltage, int signal_strength, uint32_t free_heap, uint32_t uptime_ms) {
     StaticJsonDocument<256> doc;
 
+    // Field names must match ws-server expectations
     doc["type"] = "heartbeat";
-    doc["battery_voltage"] = battery_voltage;
-    doc["signal_strength"] = signal_strength;
-    doc["free_heap"] = free_heap;
-    doc["uptime_ms"] = uptime_ms;
-
-    addCommonFields(doc);
+    doc["battery"] = battery_voltage;
+    doc["signal"] = signal_strength;
+    doc["cpuTemp"] = temperatureRead();  // ESP32 internal temp sensor
+    doc["freeMemory"] = free_heap;
+    doc["uptime"] = uptime_ms / 1000;  // Server expects seconds
 
     return sendCustomMessage(doc);
 }
 
-bool WebSocketClient::sendGPS(float latitude, float longitude, float altitude, float accuracy) {
+bool WebSocketClient::sendGPS(float latitude, float longitude, float altitude, float accuracy,
+                               float speed, float heading, int satellites) {
     StaticJsonDocument<256> doc;
 
+    // Field names must match ws-server expectations
     doc["type"] = "gps";
-    doc["latitude"] = latitude;
-    doc["longitude"] = longitude;
-    doc["altitude"] = altitude;
+    doc["lat"] = latitude;
+    doc["lng"] = longitude;
+    doc["alt"] = altitude;
+    doc["speed"] = speed;
+    doc["heading"] = heading;
     doc["accuracy"] = accuracy;
-
-    addCommonFields(doc);
+    doc["satellites"] = satellites;
 
     return sendCustomMessage(doc);
 }
 
 bool WebSocketClient::sendTelemetry(const JsonDocument& data) {
-    // Create a copy of the data and add common fields
     StaticJsonDocument<512> doc;
 
-    for (const auto& kv : data.as<JsonObject>()) {
+    // Copy fields from the input document
+    JsonObjectConst obj = data.as<JsonObjectConst>();
+    for (JsonPairConst kv : obj) {
         doc[kv.key()] = kv.value();
     }
 
     doc["type"] = "telemetry";
-    addCommonFields(doc);
 
     return sendCustomMessage(doc);
 }
@@ -118,22 +172,20 @@ bool WebSocketClient::sendTelemetry(const JsonDocument& data) {
 bool WebSocketClient::sendCommandAck(const String& command_id, bool success, const String& message) {
     StaticJsonDocument<256> doc;
 
+    // Field names must match ws-server expectations
     doc["type"] = "command_ack";
-    doc["command_id"] = command_id;
-    doc["success"] = success;
+    doc["commandId"] = command_id;
+    doc["status"] = success ? "success" : "error";
     if (message.length() > 0) {
-        doc["message"] = message;
+        doc["result"] = message;
     }
-
-    addCommonFields(doc);
 
     return sendCustomMessage(doc);
 }
 
 bool WebSocketClient::sendCustomMessage(const JsonDocument& message) {
     if (!isConnected()) {
-        LOG_WARN("WebSocket not connected, queueing message");
-        // TODO: Queue message for later delivery
+        LOG_WARN("WebSocket not connected, cannot send message");
         return false;
     }
 
@@ -141,13 +193,17 @@ bool WebSocketClient::sendCustomMessage(const JsonDocument& message) {
     String payload;
     serializeJson(message, payload);
 
-    LOG_VERBOSE("Sending WebSocket message: %s", payload.c_str());
+    LOG_VERBOSE("Sending: %s", payload.c_str());
 
-    // TODO: Send via actual WebSocket connection
-    // For now, this is a stub
+    bool sent = webSocket.sendTXT(payload);
 
-    last_message_time = millis();
-    return true;
+    if (sent) {
+        last_message_time = millis();
+    } else {
+        LOG_ERROR("Failed to send WebSocket message");
+    }
+
+    return sent;
 }
 
 void WebSocketClient::setMessageCallback(MessageCallback callback) {
@@ -192,52 +248,24 @@ bool WebSocketClient::ping() {
     if (!isConnected()) {
         return false;
     }
-
-    LOG_VERBOSE("Sending WebSocket PING");
-    last_ping_time = millis();
-
-    // TODO: Send actual PING frame
-
+    // The library handles ping/pong automatically via enableHeartbeat()
     return true;
 }
 
 void WebSocketClient::handlePong() {
-    LOG_VERBOSE("Received PONG");
     last_message_time = millis();
 }
 
 void WebSocketClient::update() {
-    // Check if we need to reconnect
-    if (!isConnected()) {
-        reconnect();
-        return;
-    }
-
-    // Send periodic ping
-    uint32_t now = millis();
-    if (now - last_ping_time > 30000) {  // 30 seconds
-        ping();
-    }
-
-    // Check for timeout
-    if (now - last_message_time > 120000) {  // 2 minutes
-        LOG_WARN("WebSocket timeout, disconnecting");
-        disconnect();
-    }
+    // CRITICAL: Must call webSocket.loop() to pump the WebSocket state machine
+    webSocket.loop();
 }
 
 uint32_t WebSocketClient::getReconnectDelay() {
-    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 60s
+    // Handled internally by WebSocketsClient via setReconnectInterval()
     uint32_t delay = (1 << reconnect_attempts) * 1000;
     if (delay > 60000) {
         delay = 60000;
     }
     return delay;
-}
-
-void WebSocketClient::addCommonFields(JsonDocument& doc) {
-    doc["token"] = device_token;
-    doc["timestamp"] = millis();
-    doc["device_model"] = DEVICE_MODEL;
-    doc["firmware_version"] = FIRMWARE_VERSION;
 }

@@ -18,6 +18,8 @@ FROM base AS runner
 ENV NODE_ENV production
 ENV PORT 8080
 
+RUN apk add --no-cache curl
+
 COPY package.json package-lock.json ./
 RUN npm ci --production
 

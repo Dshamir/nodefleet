@@ -18,6 +18,7 @@
 #include "storage.h"
 #include "websocket_client.h"
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 
@@ -100,7 +101,12 @@ void IRAM_ATTR watchdogISR();
 void setup() {
     // Initialize Serial for debugging
     Serial.begin(115200);
-    delay(1000);
+    // Wait for USB CDC serial to enumerate (ESP32-S3)
+    uint32_t serial_wait = millis();
+    while (!Serial && millis() - serial_wait < 3000) {
+        delay(10);
+    }
+    delay(500);
 
     LOG_INFO("\n\n===============================================");
     LOG_INFO("NodeFleet ESP32 Agent Booting");
@@ -144,10 +150,11 @@ void setup() {
 
     // Initialize camera
     if (ENABLE_CAMERA) {
+        LOG_INFO("Initializing camera...");
         if (camera.begin()) {
-            LOG_INFO("Camera initialized");
+            LOG_INFO("Camera initialized successfully");
         } else {
-            LOG_WARN("Camera initialization failed");
+            LOG_WARN("Camera initialization failed - check ribbon cable and DIP switch");
         }
     }
 
@@ -206,9 +213,12 @@ void loop() {
     // Update battery voltage
     updateBatteryVoltage();
 
-    // Update signal strength
+    // Update signal strength (convert CSQ to dBm: dBm = -113 + 2*rssi)
     if (device_state.modem_connected) {
-        modem.getSignalStrength(device_state.signal_strength, device_state.signal_strength);
+        int rssi_raw = 0, ber = 0;
+        if (modem.getSignalStrength(rssi_raw, ber)) {
+            device_state.signal_strength = (rssi_raw < 99) ? (-113 + 2 * rssi_raw) : 0;
+        }
     }
 
     // WebSocket keep-alive and message handling
@@ -350,9 +360,7 @@ void pairDevice() {
 
     // Build pairing request
     StaticJsonDocument<256> doc;
-    doc["pairing_code"] = device_state.pairing_code;
-    doc["device_model"] = DEVICE_MODEL;
-    doc["firmware_version"] = FIRMWARE_VERSION;
+    doc["pairingCode"] = device_state.pairing_code;
 
     String payload;
     serializeJson(doc, payload);
@@ -361,7 +369,8 @@ void pairDevice() {
 
     // Make HTTP POST request to pairing endpoint
     HTTPClient http;
-    String url = "https://" + String(SERVER_HOST) + ":" + String(SERVER_PORT) + DEVICE_PAIR_URL;
+    String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT_HTTP) + DEVICE_PAIR_URL;
+    LOG_INFO("Pairing URL: %s", url.c_str());
 
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
@@ -370,13 +379,11 @@ void pairDevice() {
 
     if (http_code == 200) {
         String response = http.getString();
-        LOG_VERBOSE("Pairing response: %s", response.c_str());
 
-        StaticJsonDocument<256> resp_doc;
+        StaticJsonDocument<1024> resp_doc;
         DeserializationError error = deserializeJson(resp_doc, response);
-
-        if (!error && resp_doc.containsKey("device_token")) {
-            device_state.device_token = resp_doc["device_token"].as<String>();
+        if (!error && resp_doc.containsKey("token")) {
+            device_state.device_token = resp_doc["token"].as<String>();
             device_state.is_paired = true;
 
             // Save token to NVS
@@ -411,7 +418,7 @@ void handleIncomingCommand(const JsonDocument& cmd) {
     }
 
     String command = cmd["command"].as<String>();
-    String command_id = cmd.containsKey("id") ? cmd["id"].as<String>() : "";
+    String command_id = cmd.containsKey("commandId") ? cmd["commandId"].as<String>() : "";
 
     LOG_INFO("Received command: %s (id: %s)", command.c_str(), command_id.c_str());
 
@@ -420,13 +427,25 @@ void handleIncomingCommand(const JsonDocument& cmd) {
 
     if (command == "capture_photo") {
         LOG_INFO("Executing: capture_photo");
-        captureAndUploadPhoto();
-        success = true;
+        if (ENABLE_CAMERA && camera.isReady()) {
+            captureAndUploadPhoto();
+            success = true;
+            message = "Photo captured";
+        } else {
+            message = "No camera module on this board";
+            success = false;
+        }
     }
     else if (command == "capture_video") {
         LOG_INFO("Executing: capture_video");
-        captureAndUploadVideo();
-        success = true;
+        if (ENABLE_CAMERA && camera.isReady()) {
+            captureAndUploadVideo();
+            success = true;
+            message = "Video captured";
+        } else {
+            message = "No camera module on this board";
+            success = false;
+        }
     }
     else if (command == "record_audio") {
         LOG_INFO("Executing: record_audio");
@@ -434,7 +453,7 @@ void handleIncomingCommand(const JsonDocument& cmd) {
             recordAndUploadAudio();
             success = true;
         } else {
-            message = "Audio not enabled";
+            message = "Audio not enabled on this board";
             success = false;
         }
     }
@@ -503,23 +522,70 @@ void captureAndUploadPhoto() {
 
     LOG_INFO("Photo captured: %d bytes", fb.length);
 
-    // TODO: Upload to presigned URL via server API
-    // For now, optionally save to SD card
+    // Step 1: Request presigned upload URL from server
+    String filename = "photo_" + String(millis()) + ".jpg";
 
-    if (ENABLE_SD_CARD && storage.sd_isReady()) {
-        String filename = "/photos/photo_" + String(millis()) + ".jpg";
-        if (storage.sd_writeFile(filename, fb.buffer, fb.length)) {
-            LOG_INFO("Photo saved to SD card: %s", filename.c_str());
-        }
+    StaticJsonDocument<256> reqDoc;
+    reqDoc["filename"] = filename;
+    reqDoc["contentType"] = "image/jpeg";
+    reqDoc["size"] = fb.length;
+
+    String reqPayload;
+    serializeJson(reqDoc, reqPayload);
+
+    HTTPClient http;
+    String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT_HTTP) + "/api/devices/upload";
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + device_state.device_token);
+
+    int httpCode = http.POST(reqPayload);
+
+    if (httpCode != 200) {
+        LOG_ERROR("Failed to get upload URL: HTTP %d", httpCode);
+        camera.releaseFrameBuffer(fb);
+        http.end();
+        return;
     }
 
-    // Queue for upload if offline
-    if (!device_state.wifi_connected && !device_state.modem_connected) {
-        if (ENABLE_SD_CARD) {
-            storage.queue_addFile("/photos/photo_" + String(millis()) + ".jpg", "photo");
-        }
+    String response = http.getString();
+    http.end();
+
+    StaticJsonDocument<512> respDoc;
+    if (deserializeJson(respDoc, response) || !respDoc.containsKey("uploadUrl")) {
+        LOG_ERROR("Invalid upload URL response");
+        camera.releaseFrameBuffer(fb);
+        return;
     }
 
+    String uploadUrl = respDoc["uploadUrl"].as<String>();
+    String fileId = respDoc["fileId"].as<String>();
+
+    LOG_INFO("Got upload URL, uploading %d bytes...", fb.length);
+
+    // Step 2: Upload JPEG directly to MinIO via presigned URL
+    HTTPClient uploadHttp;
+    uploadHttp.begin(uploadUrl);
+    uploadHttp.addHeader("Content-Type", "image/jpeg");
+
+    int uploadCode = uploadHttp.PUT(fb.buffer, fb.length);
+
+    if (uploadCode >= 200 && uploadCode < 300) {
+        LOG_INFO("Photo uploaded successfully! fileId: %s", fileId.c_str());
+
+        // Notify server via WebSocket that media is ready
+        StaticJsonDocument<256> mediaMsg;
+        mediaMsg["type"] = "media_ready";
+        mediaMsg["fileType"] = "image";
+        mediaMsg["filename"] = filename;
+        mediaMsg["size"] = fb.length;
+        ws_client.sendCustomMessage(mediaMsg);
+    } else {
+        LOG_ERROR("Photo upload failed: HTTP %d", uploadCode);
+    }
+
+    uploadHttp.end();
     camera.releaseFrameBuffer(fb);
 }
 
@@ -596,17 +662,17 @@ void sendHeartbeat() {
         StaticJsonDocument<256> doc;
         doc["type"] = "heartbeat";
         doc["token"] = device_state.device_token;
-        doc["battery_voltage"] = device_state.battery_voltage;
-        doc["signal_strength"] = device_state.signal_strength;
-        doc["free_heap"] = esp_get_free_heap_size();
-        doc["uptime_ms"] = device_state.uptime_ms;
+        doc["battery"] = device_state.battery_voltage;
+        doc["signal"] = device_state.signal_strength;
+        doc["freeMemory"] = esp_get_free_heap_size();
+        doc["uptime"] = device_state.uptime_ms / 1000;
         doc["timestamp"] = millis();
 
         String payload;
         serializeJson(doc, payload);
 
         HTTPClient http;
-        String url = "https://" + String(SERVER_HOST) + "/api/devices/heartbeat";
+        String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT_HTTP) + "/api/devices/heartbeat";
 
         http.begin(url);
         http.addHeader("Content-Type", "application/json");
@@ -624,11 +690,12 @@ void updateGPS() {
         return;
     }
 
-    float lat, lon, alt, acc;
-    if (modem.getGPSFix(lat, lon, alt, acc)) {
+    float lat, lon, alt, acc, spd, hdg;
+    int sats;
+    if (modem.getGPSFix(lat, lon, alt, acc, spd, hdg, sats)) {
         device_state.has_gps_fix = true;
-        ws_client.sendGPS(lat, lon, alt, acc);
-        LOG_INFO("GPS: %.4f, %.4f (alt: %.1f m)", lat, lon, alt);
+        ws_client.sendGPS(lat, lon, alt, acc, spd, hdg, sats);
+        LOG_INFO("GPS: %.4f, %.4f (alt: %.1f m, sats: %d)", lat, lon, alt, sats);
 
         if (ENABLE_SD_CARD && storage.sd_isReady()) {
             StaticJsonDocument<128> gps_data;
@@ -681,7 +748,7 @@ void updateStatus() {
         ws_client.sendTelemetry(doc);
     } else {
         HTTPClient http;
-        String url = "https://" + String(SERVER_HOST) + "/api/devices/status";
+        String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT_HTTP) + "/api/devices/status";
 
         http.begin(url);
         http.addHeader("Content-Type", "application/json");

@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <WebSocketsClient.h>
 
 typedef void (*MessageCallback)(const JsonDocument& message);
 typedef void (*StateChangeCallback)(int state);
@@ -19,7 +20,8 @@ public:
 
     // Message sending
     bool sendHeartbeat(float battery_voltage, int signal_strength, uint32_t free_heap, uint32_t uptime_ms);
-    bool sendGPS(float latitude, float longitude, float altitude, float accuracy);
+    bool sendGPS(float latitude, float longitude, float altitude, float accuracy,
+                 float speed = 0, float heading = 0, int satellites = 0);
     bool sendTelemetry(const JsonDocument& data);
     bool sendCommandAck(const String& command_id, bool success, const String& message = "");
     bool sendCustomMessage(const JsonDocument& message);
@@ -47,6 +49,8 @@ private:
     String endpoint;
     String device_token;
 
+    WebSocketsClient webSocket;
+
     int connection_state;  // 0=disconnected, 1=connecting, 2=connected
     uint32_t last_message_time;
     uint32_t reconnect_attempts;
@@ -59,8 +63,10 @@ private:
     // Exponential backoff
     uint32_t getReconnectDelay();
 
-    // Message building helpers
-    void addCommonFields(JsonDocument& doc);
+    // WebSocket event handler
+    void onWebSocketEvent(WStype_t type, uint8_t* payload, size_t length);
+    static void eventCallback(WStype_t type, uint8_t* payload, size_t length);
+    static WebSocketClient* instance;
 };
 
 #endif // WEBSOCKET_CLIENT_H

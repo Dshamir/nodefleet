@@ -10,16 +10,35 @@ bool SIM7670GModem::begin() {
     LOG_INFO("Initializing SIM7670G modem...");
 
     modem_serial->begin(baud_rate, SERIAL_8N1, rx_pin, tx_pin);
-    delay(500);
 
-    // Test basic communication
+    // Wait for modem to boot (may take several seconds after power-on)
+    delay(3000);
+
+    // Try AT command with multiple retries (modem may need time to initialize UART)
     String response;
-    if (!sendAT("AT", response, 2000)) {
-        LOG_ERROR("Modem not responding to AT command");
-        return false;
+    bool modem_found = false;
+
+    for (int attempt = 0; attempt < 5; attempt++) {
+        LOG_INFO("Modem AT probe attempt %d/5...", attempt + 1);
+
+        // Flush any garbage from serial buffer
+        while (modem_serial->available()) {
+            modem_serial->read();
+        }
+
+        if (sendAT("AT", response, 2000)) {
+            LOG_INFO("Modem responding: %s", response.c_str());
+            modem_found = true;
+            break;
+        }
+
+        delay(2000);
     }
 
-    LOG_INFO("Modem responding: %s", response.c_str());
+    if (!modem_found) {
+        LOG_ERROR("Modem not responding after 5 attempts");
+        return false;
+    }
 
     // Disable echo
     sendAT("ATE0", response, 1000);
@@ -34,8 +53,8 @@ bool SIM7670GModem::begin() {
 
     // Enable cellular connection
     if (!enableCellular()) {
-        LOG_ERROR("Failed to enable cellular");
-        return false;
+        LOG_WARN("Cellular registration pending, will retry in background");
+        // Don't fail hard - modem is alive, just not registered yet
     }
 
     modem_ready = true;
@@ -58,14 +77,21 @@ bool SIM7670GModem::waitForNetworkRegistration(uint32_t timeout_ms) {
     String response;
 
     while (millis() - start_time < timeout_ms) {
-        if (sendAT("AT+CREG?", response, 1000)) {
-            // Expected: +CREG: <n>,<stat> where stat=1 (registered) or stat=5 (registered roaming)
+        // Try LTE registration first (AT+CEREG), then fall back to 2G/3G (AT+CREG)
+        if (sendAT("AT+CEREG?", response, 1000)) {
+            // stat=1 (registered home) or stat=5 (registered roaming)
             if (response.indexOf(",1") != -1 || response.indexOf(",5") != -1) {
-                LOG_INFO("Network registered");
+                LOG_INFO("LTE network registered");
                 return true;
             }
         }
-        delay(1000);
+        if (sendAT("AT+CREG?", response, 1000)) {
+            if (response.indexOf(",1") != -1 || response.indexOf(",5") != -1) {
+                LOG_INFO("2G/3G network registered");
+                return true;
+            }
+        }
+        delay(2000);
     }
 
     LOG_ERROR("Network registration timeout");
@@ -75,11 +101,8 @@ bool SIM7670GModem::waitForNetworkRegistration(uint32_t timeout_ms) {
 bool SIM7670GModem::enableCellular() {
     String response;
 
-    // Set network mode to 4G preferred
-    sendAT("AT+CNBP=38,2,1,2", response, 1000);  // 4G/3G/2G
-
-    // Enable mobile data
-    sendAT("AT+CFUN=1", response, 2000);
+    // Enable full functionality
+    sendAT("AT+CFUN=1", response, 5000);
 
     return waitForNetworkRegistration();
 }
@@ -91,10 +114,17 @@ bool SIM7670GModem::disableCellular() {
 
 bool SIM7670GModem::isConnected() {
     String response;
-    if (!sendAT("AT+CREG?", response, 1000)) {
-        return false;
+    // Check LTE registration first
+    if (sendAT("AT+CEREG?", response, 1000)) {
+        if (response.indexOf(",1") != -1 || response.indexOf(",5") != -1) {
+            return true;
+        }
     }
-    return response.indexOf(",1") != -1 || response.indexOf(",5") != -1;
+    // Fall back to 2G/3G
+    if (sendAT("AT+CREG?", response, 1000)) {
+        return response.indexOf(",1") != -1 || response.indexOf(",5") != -1;
+    }
+    return false;
 }
 
 bool SIM7670GModem::getSignalStrength(int& rssi, int& ber) {
@@ -149,69 +179,94 @@ bool SIM7670GModem::enableGNSS() {
     String response;
     LOG_INFO("Enabling GNSS (GPS)...");
 
-    // Enable GNSS
-    if (!sendAT("AT+CGNSPWR=1", response, 2000)) {
-        LOG_ERROR("Failed to enable GNSS");
-        return false;
-    }
+    // SIM7670G uses AT+CGPS=1 to enable GPS
+    // First try to enable, ignore error if already enabled
+    sendAT("AT+CGPS=1", response, 2000);
 
-    delay(1000);
+    delay(2000);
     LOG_INFO("GNSS enabled");
     return true;
 }
 
 bool SIM7670GModem::disableGNSS() {
     String response;
-    return sendAT("AT+CGNSPWR=0", response, 2000);
+    return sendAT("AT+CGPS=0", response, 2000);
 }
 
-bool SIM7670GModem::getGPSFix(float& latitude, float& longitude, float& altitude, float& accuracy) {
+bool SIM7670GModem::getGPSFix(float& latitude, float& longitude, float& altitude, float& accuracy,
+                               float& speed, float& heading, int& satellites) {
     String response;
 
-    if (!sendAT("AT+CGNSINF", response, 2000)) {
+    // SIM7670G uses AT+CGPSINFO instead of AT+CGNSINF
+    if (!sendAT("AT+CGPSINFO", response, 3000)) {
         return false;
     }
 
-    // Parse: +CGNSINF: <GNSS_run>,<Fix_stat>,<UTC_date>,<UTC_time>,<Latitude>,<Longitude>,<Altitude>,<Accuracy>,<HDOP>,<PDOP>,<VDOP>,<Speed_over_ground>,<Course_over_ground>,<Fix_mode>,<Reserved1>,<HDOP>,<PDOP>,<VDOP>,<Reserved2>,<num_SV>
-    // Example: +CGNSINF: 1,1,20231215,093023.00,3122.47123,N,11758.43765,E,100.2,50,1.0,2.5,3.0,0.0,0.0,0,0,0.0,0.0,0.0,0,08
+    // Response format: +CGPSINFO: ddmm.mmmm,N/S,dddmm.mmmm,E/W,date,time,alt,speed,course
+    // Example: +CGPSINFO: 4531.0216,N,07338.5976,W,270326,191126.000,61.6,0.54,144.40
+    // Empty response means no fix: +CGPSINFO: ,,,,,,,,
 
-    int start = response.indexOf(":") + 2;
-    String data = response.substring(start);
+    int colon = response.indexOf(":");
+    if (colon == -1) {
+        return false;
+    }
 
-    // Split by comma
-    int parts[20];
-    int part_count = 0;
-    int last_pos = 0;
+    String data = response.substring(colon + 2);
+    data.trim();
 
-    for (int i = 0; i < data.length() && part_count < 20; i++) {
-        if (data[i] == ',') {
-            String part = data.substring(last_pos, i);
-            parts[part_count++] = atoi(part.c_str());
-            last_pos = i + 1;
+    // Check for empty/no-fix response
+    if (data.startsWith(",") || data.length() < 10) {
+        LOG_VERBOSE("No GPS fix yet");
+        return false;
+    }
+
+    // Split CSV into fields
+    String fields[10];
+    int fieldCount = 0;
+    int lastPos = 0;
+
+    for (unsigned int i = 0; i <= data.length() && fieldCount < 10; i++) {
+        if (i == data.length() || data[i] == ',') {
+            fields[fieldCount++] = data.substring(lastPos, i);
+            lastPos = i + 1;
         }
     }
 
-    // parts[0] = GNSS_run (0=off, 1=on)
-    // parts[1] = Fix_stat (0=no fix, 1=GPS fix, 2=DGPS fix, 3=PPS fix, etc.)
-
-    if (parts[1] == 0 || parts[1] > 3) {
-        LOG_VERBOSE("No GPS fix yet (stat=%d)", parts[1]);
+    if (fieldCount < 9) {
+        LOG_VERBOSE("CGPSINFO response too short (%d fields)", fieldCount);
         return false;
     }
 
-    // Extract lat/lon from the response string directly (they include direction)
-    int lat_start = response.indexOf(",20") + 10;  // Skip GNSS_run and Fix_stat
-    // This is a simplified approach; production code should properly parse the CSV with direction indicators
+    // Parse latitude: ddmm.mmmm format → decimal degrees
+    // fields[0] = "4531.0216" (45 degrees, 31.0216 minutes)
+    // fields[1] = "N" or "S"
+    float lat_raw = fields[0].toFloat();
+    int lat_deg = (int)(lat_raw / 100);
+    float lat_min = lat_raw - (lat_deg * 100);
+    latitude = lat_deg + (lat_min / 60.0);
+    if (fields[1] == "S") latitude = -latitude;
 
-    LOG_VERBOSE("GPS data available (fix_stat=%d)", parts[1]);
+    // Parse longitude: dddmm.mmmm format → decimal degrees
+    // fields[2] = "07338.5976" (73 degrees, 38.5976 minutes)
+    // fields[3] = "E" or "W"
+    float lon_raw = fields[2].toFloat();
+    int lon_deg = (int)(lon_raw / 100);
+    float lon_min = lon_raw - (lon_deg * 100);
+    longitude = lon_deg + (lon_min / 60.0);
+    if (fields[3] == "W") longitude = -longitude;
 
-    // For now, set placeholder values
-    // In production, properly parse lat/lon/alt/accuracy from response
-    latitude = 37.7749;
-    longitude = -122.4194;
-    altitude = 0.0;
-    accuracy = 100.0;
+    // fields[4] = date (ddmmyy)
+    // fields[5] = time (hhmmss.sss)
+    altitude = fields[6].toFloat();     // meters
+    speed = fields[7].toFloat();         // km/h (knots on some firmware)
+    heading = fields[8].toFloat();       // degrees
 
+    // SIM7670G CGPSINFO doesn't provide HDOP or satellite count
+    accuracy = 10.0;  // reasonable default
+    satellites = 0;    // not available in this response
+
+    LOG_INFO("GPS fix: %.6f, %.6f (alt:%.1fm spd:%.1fkm/h hdg:%.1f)",
+             latitude, longitude, altitude, speed, heading);
     return true;
 }
 

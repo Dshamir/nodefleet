@@ -5,8 +5,11 @@ import * as http from 'http';
 import * as url from 'url';
 import Redis from 'ioredis';
 import { v4 as uuidv4 } from 'uuid';
-import * as jwt from 'jsonwebtoken';
+import jwt from 'jsonwebtoken';
+import pg from 'pg';
 import { UDPDiscoveryService, MDNSResponder } from './discovery.js';
+
+const { Pool } = pg;
 
 // ============================================================================
 // TYPES
@@ -132,11 +135,22 @@ class NodeFleetWSServer {
   private readonly HEARTBEAT_INTERVAL = 30000; // 30 seconds
   private readonly HEARTBEAT_TIMEOUT = 90000; // 90 seconds
   private readonly ENABLE_DISCOVERY = process.env.ENABLE_DISCOVERY !== 'false';
+  private readonly WEB_API_URL = process.env.WEB_API_URL || 'http://web:3000';
+  private readonly DATABASE_URL = process.env.DATABASE_URL || 'postgresql://nodefleet:nodefleet@postgres:5432/nodefleet';
+  private db: pg.Pool;
 
   constructor() {
     this.logger = new Logger();
-    this.server = http.createServer();
-    this.wss = new WebSocketServer({ server: this.server });
+    this.server = http.createServer((req, res) => {
+      if (req.url === '/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok' }));
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+    this.wss = new WebSocketServer({ noServer: true });
 
     this.redis = new Redis({
       host: this.REDIS_HOST,
@@ -149,6 +163,10 @@ class NodeFleetWSServer {
       port: this.REDIS_PORT,
       retryStrategy: (times) => Math.min(times * 50, 2000),
     });
+
+    // Database connection pool
+    this.db = new Pool({ connectionString: this.DATABASE_URL, max: 5 });
+    this.db.on('error', (err) => this.logger.error('Database pool error', err));
 
     // Discovery services (UDP broadcast + mDNS)
     const discoveryConfig = {
@@ -299,6 +317,9 @@ class NodeFleetWSServer {
       // Setup heartbeat mechanism
       this.setupDeviceHeartbeat(deviceId);
 
+      // Drain pending command queue from Redis
+      this.drainCommandQueue(deviceId);
+
       // Handle messages from device
       ws.on('message', (data) => {
         this.handleDeviceMessage(deviceId, data);
@@ -419,6 +440,25 @@ class NodeFleetWSServer {
 
     this.publishToRedis(`device:${deviceId}:heartbeat`, JSON.stringify(heartbeatData));
 
+    // Persist to database
+    const batteryLevel = Math.round(Number(message.battery) || 0);
+    const signalStr = message.signal ? Math.round(Number(message.signal)) : null;
+    const cpuTemp = message.cpuTemp ? Number(message.cpuTemp) : null;
+    const freeMem = message.freeMemory ? Math.round(Number(message.freeMemory)) : null;
+    const uptime = message.uptime ? Math.round(Number(message.uptime)) : null;
+
+    this.db.query(
+      `INSERT INTO telemetry_records (device_id, timestamp, battery_level, signal_strength, cpu_temp, free_memory, uptime_seconds)
+       VALUES ($1, NOW(), $2, $3, $4, $5, $6)`,
+      [deviceId, batteryLevel, signalStr, cpuTemp, freeMem, uptime]
+    ).catch(err => this.logger.error('Failed to persist telemetry', err));
+
+    // Update device status
+    this.db.query(
+      `UPDATE devices SET status = 'online', last_heartbeat_at = NOW(), firmware_version = $2 WHERE id = $1`,
+      [deviceId, (message as Record<string, unknown>).firmware_version || '1.0.0']
+    ).catch(err => this.logger.error('Failed to update device status', err));
+
     // Broadcast to subscribed dashboards
     const subscribers = this.deviceSubscribers.get(deviceId);
     if (subscribers) {
@@ -452,6 +492,13 @@ class NodeFleetWSServer {
     };
 
     this.publishToRedis(`device:${deviceId}:gps`, JSON.stringify(gpsData));
+
+    // Persist to database
+    this.db.query(
+      `INSERT INTO gps_records (device_id, timestamp, latitude, longitude, altitude, speed, heading, accuracy, satellites)
+       VALUES ($1, NOW(), $2, $3, $4, $5, $6, $7, $8)`,
+      [deviceId, message.lat, message.lng, message.alt || 0, message.speed || 0, message.heading || 0, message.accuracy || 0, message.satellites || 0]
+    ).catch(err => this.logger.error('Failed to persist GPS', err));
 
     // Broadcast to subscribed dashboards
     const subscribers = this.deviceSubscribers.get(deviceId);
@@ -538,6 +585,13 @@ class NodeFleetWSServer {
     };
 
     this.publishToRedis(`device:${deviceId}:command_ack`, JSON.stringify(ackData));
+
+    // Update command status in Redis and database
+    this.updateCommandStatus(message.commandId, message.status, message.result);
+    this.db.query(
+      `UPDATE device_commands SET status = $1, result = $2, completed_at = NOW() WHERE id = $3`,
+      [message.status, message.result ? JSON.stringify(message.result) : null, message.commandId]
+    ).catch(err => this.logger.error('Failed to update command status in DB', err));
 
     // Notify subscribed dashboards
     const subscribers = this.deviceSubscribers.get(deviceId);
@@ -816,6 +870,66 @@ class NodeFleetWSServer {
   }
 
   // ============================================================================
+  // WEB API INTEGRATION
+  // ============================================================================
+
+  private async updateCommandStatus(commandId: string, status: string, result?: unknown): Promise<void> {
+    try {
+      const key = `command:${commandId}:status`;
+      await this.redisPub.set(key, JSON.stringify({ status, result, updatedAt: Date.now() }), 'EX', 86400);
+    } catch (error) {
+      this.logger.error('Failed to update command status', error);
+    }
+  }
+
+  // ============================================================================
+  // COMMAND QUEUE PROCESSING
+  // ============================================================================
+
+  private async drainCommandQueue(deviceId: string): Promise<void> {
+    const device = this.devices.get(deviceId);
+    if (!device || device.ws.readyState !== WebSocket.OPEN) return;
+
+    const queueKey = `device:${deviceId}:commands`;
+
+    try {
+      // Pop all pending commands from the Redis list
+      let cmd = await this.redis.rpop(queueKey);
+      while (cmd) {
+        try {
+          const parsed = JSON.parse(cmd);
+          const commandMessage = JSON.stringify({
+            type: 'command',
+            commandId: parsed.id,
+            command: parsed.command,
+            payload: parsed.payload || {},
+          });
+
+          device.ws.send(commandMessage);
+
+          // Update command status to 'sent' in Redis (web app reads this)
+          await this.redisPub.publish(
+            `device:${deviceId}:command_status`,
+            JSON.stringify({ commandId: parsed.id, status: 'sent' })
+          );
+
+          this.logger.info('Queued command sent to device', {
+            deviceId,
+            commandId: parsed.id,
+            command: parsed.command,
+          });
+        } catch (parseError) {
+          this.logger.error('Failed to parse queued command', parseError);
+        }
+
+        cmd = await this.redis.rpop(queueKey);
+      }
+    } catch (error) {
+      this.logger.error(`Failed to drain command queue for ${deviceId}`, error);
+    }
+  }
+
+  // ============================================================================
   // HEARTBEAT MECHANISM
   // ============================================================================
 
@@ -932,9 +1046,10 @@ class NodeFleetWSServer {
     await this.udpDiscovery.stop();
     await this.mdnsResponder.stop();
 
-    // Close Redis connections
+    // Close Redis and database connections
     await this.redis.quit();
     await this.redisPub.quit();
+    await this.db.end();
 
     // Close HTTP server
     return new Promise((resolve, reject) => {

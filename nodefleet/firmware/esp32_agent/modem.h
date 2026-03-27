@@ -23,7 +23,8 @@ public:
     // GPS Functions
     bool enableGNSS();
     bool disableGNSS();
-    bool getGPSFix(float& latitude, float& longitude, float& altitude, float& accuracy);
+    bool getGPSFix(float& latitude, float& longitude, float& altitude, float& accuracy,
+                   float& speed, float& heading, int& satellites);
 
     // HTTP Operations via modem
     bool httpGet(const String& url, String& response, uint32_t timeout_ms = 10000);
