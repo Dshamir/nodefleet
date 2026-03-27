@@ -58,15 +58,15 @@ public:
     float sd_getUsagePercent();
 
     // Logging
-    bool log_writeLog(const String& message);
-    bool log_readLog(uint32_t offset, String& data, size_t max_size);
+    bool LOG_writeLog(const String& message);
+    bool LOG_readLog(uint32_t offset, String& data, size_t max_size);
 
 private:
     bool sd_ready;
     int sd_cs_pin;
 
     String queue_dir;
-    String log_dir;
+    String LOG_dir;
 };
 
 #endif // STORAGE_H

@@ -1,6 +1,7 @@
 #include "websocket_client.h"
 #include "config.h"
 
+
 // Note: This implementation is a stub using HTTP fallback
 // For full WebSocket support, use WebSocketsClient library with WiFi
 // This provides the interface and HTTP fallback behavior
@@ -103,9 +104,11 @@ bool WebSocketClient::sendGPS(float latitude, float longitude, float altitude, f
 
 bool WebSocketClient::sendTelemetry(const JsonDocument& data) {
     // Create a copy of the data and add common fields
-    StaticJsonDocument<512> doc;
-
-    for (const auto& kv : data.as<JsonObject>()) {
+    //StaticJsonDocument<512> doc;
+    JsonDocument doc;
+    
+    //for (const auto& kv : data.as<JsonObject>()) {
+    for (JsonPairConst kv : data.as<JsonObjectConst>()) {
         doc[kv.key()] = kv.value();
     }
 

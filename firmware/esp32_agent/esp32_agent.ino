@@ -21,6 +21,7 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 
+
 // ============================================================================
 // Global Objects
 // ============================================================================
@@ -117,13 +118,14 @@ void setup() {
     storage.nvs_begin("nodefleet");
 
     // Load or use pairing code
-    if (!storage.nvs_loadPairingCode(device_state.pairing_code)) {
+    // DO NOT LOAD FROM NVS, else make it hard to change
+    //if (!storage.nvs_loadPairingCode(device_state.pairing_code)) {
         device_state.pairing_code = PAIRING_CODE;
         storage.nvs_savePairingCode(device_state.pairing_code);
         LOG_INFO("Using default pairing code: %s", device_state.pairing_code.c_str());
-    } else {
-        LOG_INFO("Loaded pairing code from NVS: %s", device_state.pairing_code.c_str());
-    }
+    //} else {
+    //    LOG_INFO("Loaded pairing code from NVS: %s", device_state.pairing_code.c_str());
+    //}
 
     // Try to load existing device token
     if (storage.nvs_loadDeviceToken(device_state.device_token)) {
@@ -176,10 +178,10 @@ void setup() {
 
     // Setup watchdog timer
 #if ENABLE_WATCHDOG
-    watchdog_timer = timerBegin(0, 80, true);
-    timerAttachInterrupt(watchdog_timer, &watchdogISR, true);
-    timerAlarmWrite(watchdog_timer, WATCHDOG_TIMEOUT_MS * 1000, false);
-    timerAlarmEnable(watchdog_timer);
+    watchdog_timer = timerBegin(1000000); //timerBegin(0, 80, true);
+    timerAttachInterrupt(watchdog_timer, &watchdogISR); //timerAttachInterrupt(watchdog_timer, &watchdogISR, true);
+    timerAlarm(watchdog_timer, WATCHDOG_TIMEOUT_MS * 1000, false, 0); //timerAlarmWrite(watchdog_timer, WATCHDOG_TIMEOUT_MS * 1000, false);
+    //timerAlarmEnable(watchdog_timer);
     LOG_INFO("Watchdog timer enabled (%dms timeout)", WATCHDOG_TIMEOUT_MS);
 #endif
 
@@ -350,7 +352,7 @@ void pairDevice() {
 
     // Build pairing request
     StaticJsonDocument<256> doc;
-    doc["pairing_code"] = device_state.pairing_code;
+    doc["pairingCode"] = device_state.pairing_code;
     doc["device_model"] = DEVICE_MODEL;
     doc["firmware_version"] = FIRMWARE_VERSION;
 
@@ -362,7 +364,7 @@ void pairDevice() {
     // Make HTTP POST request to pairing endpoint
     HTTPClient http;
     String url = "https://" + String(SERVER_HOST) + ":" + String(SERVER_PORT) + DEVICE_PAIR_URL;
-
+    LOG_INFO("%s",url.c_str());
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
 
@@ -371,12 +373,12 @@ void pairDevice() {
     if (http_code == 200) {
         String response = http.getString();
         LOG_VERBOSE("Pairing response: %s", response.c_str());
-
+        
         StaticJsonDocument<256> resp_doc;
         DeserializationError error = deserializeJson(resp_doc, response);
 
-        if (!error && resp_doc.containsKey("device_token")) {
-            device_state.device_token = resp_doc["device_token"].as<String>();
+        if (!error && resp_doc.containsKey("token")) {
+            device_state.device_token = resp_doc["token"].as<String>();
             device_state.is_paired = true;
 
             // Save token to NVS
@@ -640,7 +642,7 @@ void updateGPS() {
 
             String json;
             serializeJson(gps_data, json);
-            storage.log_writeLog("GPS: " + json);
+            storage.LOG_writeLog("GPS: " + json);
         }
     } else {
         device_state.has_gps_fix = false;
@@ -757,18 +759,18 @@ void updateBatteryVoltage() {
 
 void handleWiFiEvent(WiFiEvent_t event) {
     switch (event) {
-        case SYSTEM_EVENT_STA_START:
+        case WIFI_EVENT_STA_START:
             LOG_INFO("WiFi STA started");
             break;
-        case SYSTEM_EVENT_STA_CONNECTED:
+        case WIFI_EVENT_STA_CONNECTED:
             LOG_INFO("WiFi connected");
             break;
-        case SYSTEM_EVENT_STA_GOT_IP:
+        case IP_EVENT_STA_GOT_IP:
             LOG_INFO("WiFi got IP: %s", WiFi.localIP().toString().c_str());
             device_state.wifi_connected = true;
             setLEDStatus(1);  // Connected LED
             break;
-        case SYSTEM_EVENT_STA_DISCONNECTED:
+        case WIFI_EVENT_STA_DISCONNECTED:
             LOG_WARN("WiFi disconnected");
             device_state.wifi_connected = false;
             setLEDStatus(2);  // Slow blink

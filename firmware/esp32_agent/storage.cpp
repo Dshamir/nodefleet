@@ -1,19 +1,22 @@
 #include "storage.h"
 #include "config.h"
 
+
 #if ENABLE_NVS
 #include <nvs_flash.h>
 #include <nvs.h>
 #endif
 
 #if ENABLE_SD_CARD
-#include <SD.h>
+//#include <SD.h>
+#include <SD_MMC.h>
+#include <FS.h>
 #include <SPI.h>
 #endif
 
 StorageManager::StorageManager() : sd_ready(false), sd_cs_pin(-1) {
     queue_dir = "/queue";
-    log_dir = "/logs";
+    LOG_dir = "/logs";
 }
 
 // ============================================================================
@@ -198,27 +201,27 @@ bool StorageManager::sd_begin(int cs_pin) {
     sd_cs_pin = cs_pin;
 
     // Initialize SPI
-    SPI.begin(SD_CLK, SD_MISO, SD_MOSI, SD_CS);
+    SD_MMC.setPins(SDMMC_CLK, SDMMC_CMD, SDMMC_DATA);
 
-    if (!SD.begin(SD_CS, SPI, 4000000)) {
+    if (!SD_MMC.begin("/sdcard", true)) {
         LOG_ERROR("SD card initialization failed");
         return false;
     }
-
-    uint8_t card_type = SD.cardType();
+;
+    uint8_t card_type = SD_MMC.cardType();
     if (card_type == CARD_NONE) {
         LOG_ERROR("No SD card detected");
         return false;
     }
 
-    uint64_t card_size = SD.cardSize() / (1024 * 1024);
+    uint64_t card_size = SD_MMC.cardSize() / (1024 * 1024);
     LOG_INFO("SD Card Type: %d, Size: %lld MB", card_type, card_size);
 
     sd_ready = true;
 
     // Create directories if they don't exist
     sd_createDir(queue_dir);
-    sd_createDir(log_dir);
+    sd_createDir(LOG_dir);
     sd_createDir("/photos");
     sd_createDir("/videos");
 
@@ -230,7 +233,7 @@ bool StorageManager::sd_begin(int cs_pin) {
 
 bool StorageManager::sd_end() {
 #if ENABLE_SD_CARD
-    SD.end();
+    SD_MMC.end();
     sd_ready = false;
     return true;
 #else
@@ -249,7 +252,7 @@ bool StorageManager::sd_writeFile(const String& path, const uint8_t* data, size_
         return false;
     }
 
-    File file = SD.open(path, FILE_WRITE);
+    File file = SD_MMC.open(path, FILE_WRITE);
     if (!file) {
         LOG_ERROR("Failed to open file for writing: %s", path.c_str());
         return false;
@@ -276,7 +279,7 @@ bool StorageManager::sd_appendFile(const String& path, const uint8_t* data, size
         return false;
     }
 
-    File file = SD.open(path, FILE_APPEND);
+    File file = SD_MMC.open(path, FILE_APPEND);
     if (!file) {
         LOG_ERROR("Failed to open file for appending: %s", path.c_str());
         return false;
@@ -297,7 +300,7 @@ bool StorageManager::sd_readFile(const String& path, uint8_t* buffer, size_t buf
         return false;
     }
 
-    File file = SD.open(path, FILE_READ);
+    File file = SD_MMC.open(path, FILE_READ);
     if (!file) {
         LOG_ERROR("Failed to open file for reading: %s", path.c_str());
         return false;
@@ -319,7 +322,7 @@ bool StorageManager::sd_deleteFile(const String& path) {
         return false;
     }
 
-    if (!SD.remove(path)) {
+    if (!SD_MMC.remove(path)) {
         LOG_ERROR("Failed to delete file: %s", path.c_str());
         return false;
     }
@@ -336,7 +339,7 @@ bool StorageManager::sd_fileExists(const String& path) {
     if (!sd_ready) {
         return false;
     }
-    return SD.exists(path);
+    return SD_MMC.exists(path);
 #else
     return false;
 #endif
@@ -348,7 +351,7 @@ size_t StorageManager::sd_getFileSize(const String& path) {
         return 0;
     }
 
-    File file = SD.open(path, FILE_READ);
+    File file = SD_MMC.open(path, FILE_READ);
     if (!file) {
         return 0;
     }
@@ -367,11 +370,11 @@ bool StorageManager::sd_createDir(const String& path) {
         return false;
     }
 
-    if (SD.exists(path)) {
+    if (SD_MMC.exists(path)) {
         return true;
     }
 
-    return SD.mkdir(path);
+    return SD_MMC.mkdir(path);
 #else
     return false;
 #endif
@@ -382,7 +385,7 @@ bool StorageManager::sd_removeDir(const String& path) {
     if (!sd_ready) {
         return false;
     }
-    return SD.rmdir(path);
+    return SD_MMC.rmdir(path);
 #else
     return false;
 #endif
@@ -396,7 +399,7 @@ std::vector<String> StorageManager::sd_listDir(const String& path) {
         return files;
     }
 
-    File dir = SD.open(path);
+    File dir = SD_MMC.open(path);
     if (!dir || !dir.isDirectory()) {
         LOG_ERROR("Failed to open directory: %s", path.c_str());
         return files;
@@ -556,7 +559,7 @@ size_t StorageManager::sd_getFreeSpace() {
     }
     // Note: ESP32 SD library doesn't directly provide free space
     // This is a placeholder
-    return SD.cardSize() / 4;  // Approximate
+    return SD_MMC.cardSize() / 4;  // Approximate
 #else
     return 0;
 #endif
@@ -567,7 +570,7 @@ size_t StorageManager::sd_getTotalSpace() {
     if (!sd_ready) {
         return 0;
     }
-    return SD.cardSize();
+    return SD_MMC.cardSize();
 #else
     return 0;
 #endif
@@ -585,33 +588,33 @@ float StorageManager::sd_getUsagePercent() {
 // Logging
 // ============================================================================
 
-bool StorageManager::log_writeLog(const String& message) {
+bool StorageManager::LOG_writeLog(const String& message) {
 #if ENABLE_SD_CARD
     if (!sd_ready) {
         return false;
     }
 
     String timestamp = "[" + String(millis()) + "] ";
-    String log_entry = timestamp + message + "\n";
+    String LOG_entry = timestamp + message + "\n";
 
-    String log_file = log_dir + "/device.log";
-    return sd_appendFile(log_file, (uint8_t*)log_entry.c_str(), log_entry.length());
+    String LOG_file = LOG_dir + "/device.log";
+    return sd_appendFile(LOG_file, (uint8_t*)LOG_entry.c_str(), LOG_entry.length());
 #else
     return false;
 #endif
 }
 
-bool StorageManager::log_readLog(uint32_t offset, String& data, size_t max_size) {
+bool StorageManager::LOG_readLog(uint32_t offset, String& data, size_t max_size) {
 #if ENABLE_SD_CARD
     if (!sd_ready) {
         return false;
     }
 
-    String log_file = log_dir + "/device.log";
+    String LOG_file = LOG_dir + "/device.log";
     uint8_t buffer[1024];
     size_t bytes_read;
 
-    if (!sd_readFile(log_file, buffer, min(sizeof(buffer), max_size), bytes_read)) {
+    if (!sd_readFile(LOG_file, buffer, min(sizeof(buffer), max_size), bytes_read)) {
         return false;
     }
 
