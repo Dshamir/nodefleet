@@ -18,125 +18,120 @@ Complete IoT device firmware for the Waveshare ESP32-S3 SIM7670G board, designed
 ## Hardware Requirements
 
 ### Board
-- **Waveshare ESP32-S3** with SIM7670G modem integration
-- **ESP32-S3** microcontroller (dual-core, 2.4GHz WiFi)
-- **SIM7670G** 4G/LTE modem with GNSS
+- **Waveshare ESP32-S3-SIM7670G-4G** (verified, recommended)
+- **ESP32-S3** microcontroller (dual-core 240MHz, 2MB PSRAM, 16MB Flash)
+- **SIM7670G** 4G/LTE Cat-1 modem with GNSS
+- **OV2640** camera module (included in package, requires ribbon cable connection and DIP switch)
+- Nano SIM card slot (LTE data plan required for cellular/GPS)
 
 ### Optional
-- **OV2640/OV5640** camera module (for photo/video capture)
-- **I2S MEMS microphone** (for audio recording)
-- **microSD card** (for offline data storage, 4GB+ recommended)
-- **LiPo battery** with fuel gauge (recommended: 3000-5000mAh)
+- **I2S MEMS microphone** (INMP441 or similar, for audio recording)
+- **microSD card** (for offline data storage -- pins conflict with camera on this board)
+- **LiPo battery** (3.7V, connects to battery terminal on board)
 
 ## Software Requirements
 
-### Arduino IDE Setup
+### Option A: PlatformIO (Recommended)
+
+A `platformio.ini` is included. Install PlatformIO and build:
+
+```bash
+pip3 install platformio
+cd firmware/esp32_agent
+pio run                    # Compile
+pio run --target upload    # Flash to /dev/ttyACM4
+```
+
+### Option B: Arduino IDE
 
 1. **Install Board Support**
-   - Add to `Preferences → Additional Board Manager URLs`:
+   - Add to `Preferences > Additional Board Manager URLs`:
      ```
      https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
      ```
    - Install: **esp32 by Espressif (v2.0.8 or later)**
-
-2. **Select Board**
-   - `Tools → Board → ESP32 → ESP32S3 Dev Module`
-
-3. **Board Configuration**
-   - USB CDC on Boot: **Enabled** (for Serial output)
-   - Core Debug Level: **Verbose** (for debugging)
-   - Partition Scheme: **Default 4MB with spiffs**
-   - Flash Mode: **QIO**
-   - Flash Frequency: **80MHz**
+2. **Board Settings**: ESP32S3 Dev Module, Flash 16MB, QIO, 80MHz, USB CDC on Boot: Disabled
+3. **Install Libraries**: ArduinoJson 6.x, WebSockets 2.x, esp32-camera
 
 ### Required Libraries
 
-Install via `Sketch → Include Library → Manage Libraries`:
-
 | Library | Version | Purpose |
 |---------|---------|---------|
-| **ArduinoJson** | 6.19.x+ | JSON parsing/serialization |
-| **WebSocketsClient** | 2.3.0+ | WebSocket client (optional for advanced features) |
-| **HTTPClient** | (built-in) | HTTP requests |
-| **WiFi** | (built-in) | WiFi connectivity |
-| **SD** | (built-in) | SD card access |
-| **SPIFFS** | (built-in) | Flash filesystem |
-| **esp_camera** | (with ESP32 core) | Camera driver |
+| **ArduinoJson** | ^6.21.0 | JSON parsing/serialization |
+| **WebSockets** (links2004) | ^2.4.1 | Real WebSocket client with TLS |
+| **esp32-camera** (espressif) | ^2.0.0 | Camera DVP driver |
+| **HTTPClient** | (built-in) | HTTP requests for pairing/upload |
+| **WiFiClientSecure** | (built-in) | HTTPS support |
 
-## Pin Definitions
+## Pin Definitions (Waveshare ESP32-S3-SIM7670G-4G)
+
+> These pin assignments are **verified and tested** on the Waveshare ESP32-S3-SIM7670G-4G board.
 
 ### UART - SIM7670G Modem
-| Signal | GPIO | Pin Config |
-|--------|------|-----------|
-| TX (to modem) | 8 | MODEM_TX_PIN |
-| RX (from modem) | 9 | MODEM_RX_PIN |
-| Power Control | (none) | MODEM_POWER_PIN |
-| Reset Control | (none) | MODEM_RESET_PIN |
+| Signal | GPIO | Notes |
+|--------|------|-------|
+| TX (to modem) | **18** | MODEM_TX_PIN |
+| RX (from modem) | **17** | MODEM_RX_PIN |
+| Power Control | **33** | MODEM_POWER_PIN |
+| Baud Rate | 115200 | 5 retry attempts on boot |
 
-### SPI - SD Card
-| Signal | GPIO | Pin Config |
-|--------|------|-----------|
-| MOSI | 11 | SD_MOSI |
-| MISO | 13 | SD_MISO |
-| CLK | 12 | SD_CLK |
-| CS | 10 | SD_CS |
+### Camera - OV2640 DVP Interface
+| Signal | GPIO | Notes |
+|--------|------|-------|
+| XCLK | **39** | Master clock (20MHz) |
+| PCLK | **46** | Pixel clock |
+| VSYNC | **42** | Vertical sync |
+| HREF | **41** | Horizontal reference |
+| SIOD (SDA) | **15** | I2C data |
+| SIOC (SCL) | **16** | I2C clock |
+| Y2-Y9 (D0-D7) | **7,8,9,10,11,12,13,14** | 8-bit parallel data |
+
+> **Important**: Camera pins GPIO10-13 overlap with SD card SPI pins. Camera and SD card **cannot be used simultaneously** on this board.
+
+> **DIP Switch**: The CAM switch on the back of the board must be in the ON position for camera power.
 
 ### GPIO - Status & Control
-| Function | GPIO | Pin Config |
-|----------|------|-----------|
-| Status LED | 7 | STATUS_LED_PIN |
-| Battery ADC | 0 | BATTERY_ADC_PIN |
-
-### Camera (if enabled)
-> **Note**: Camera pin definitions are placeholders. Actual pins depend on your camera module and PCB design. Consult Waveshare documentation.
-
-| Signal | GPIO | Pin Config |
-|--------|------|-----------|
-| D0-D7 | varies | CAMERA_D0-D7 |
-| VSYNC | varies | CAMERA_VSYNC |
-| HREF | varies | CAMERA_HREF |
-| PCLK | varies | CAMERA_PCLK |
-| XCLK | varies | CAMERA_XCLK |
-| SDA (I2C) | varies | CAMERA_SIOD |
-| SCL (I2C) | varies | CAMERA_SIOC |
-
-### I2S Microphone (if enabled)
-| Signal | GPIO | Pin Config |
-|--------|------|-----------|
-| BCLK | varies | I2S_BCK_PIN |
-| WS (LRCLK) | varies | I2S_WS_PIN |
-| DIN | varies | I2S_DIN_PIN |
+| Function | GPIO | Notes |
+|----------|------|-------|
+| Battery ADC | **1** | GPIO1 (ADC1_CH0) |
+| Status LED | -1 | Disabled (GPIO7 used by camera D0) |
 
 ## Configuration
 
 Edit `config.h` to customize:
 
 ```cpp
-// Network Configuration
+// Network
 #define WIFI_SSID         "YourSSID"
 #define WIFI_PASSWORD     "YourPassword"
-#define USE_WIFI          1  // Enable WiFi
-#define USE_4G            1  // Enable 4G modem
 
-// Server Configuration
-#define SERVER_HOST       "nodefleet.example.com"
-#define SERVER_PORT       443
-#define DEVICE_PAIR_URL   "/api/devices/pair"
-#define DEVICE_WS_URL     "/device"
+// Server (local development -- for ngrok/production, use SSL mode)
+#define SERVER_HOST       "192.168.x.x"   // Your host machine LAN IP
+#define SERVER_PORT       50081            // WS server port
+#define SERVER_PORT_HTTP  50300            // Web API port
+#define USE_SSL           0               // 0=local HTTP/WS, 1=ngrok HTTPS/WSS
 
-// Pairing
-#define PAIRING_CODE      "PROVISIONED_CODE"
+// Pairing -- get this from the dashboard after creating a device
+#define PAIRING_CODE      "XXXXXX"
 
-// Intervals
-#define HEARTBEAT_INTERVAL_MS    30000   // 30 seconds
-#define GPS_UPDATE_INTERVAL_MS   60000   // 60 seconds
-
-// Features
+// Features -- camera requires DIP switch ON + ribbon cable connected
+#define ENABLE_CAMERA     0   // Set to 1 when camera hardware is verified
 #define ENABLE_GPS        1
-#define ENABLE_CAMERA     1
-#define ENABLE_AUDIO      0
-#define ENABLE_SD_CARD    1
+#define ENABLE_SD_CARD    0   // Pins conflict with camera
 #define ENABLE_WATCHDOG   1
+```
+
+### Local vs Production
+
+For **local development** (device on same LAN as server):
+- `SERVER_HOST` = your workstation IP (e.g., `192.168.0.19`)
+- `SERVER_PORT` = `50081`, `SERVER_PORT_HTTP` = `50300`
+- `USE_SSL` = `0`
+
+For **production** (through ngrok or public server):
+- `SERVER_HOST` = `nodefleet.ngrok.dev` (or your domain)
+- `SERVER_PORT` = `443`
+- `USE_SSL` = `1`
 
 // Debug
 #define DEBUG_SERIAL      1

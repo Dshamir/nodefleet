@@ -10,10 +10,12 @@ This document describes the WebSocket protocol used for real-time communication 
 
 | Client    | Endpoint                          |
 |-----------|-----------------------------------|
-| Device    | `ws://host/ws/device?token=JWT`   |
-| Dashboard | `ws://host/ws/dashboard?token=JWT`|
+| Device    | `ws://host/device?token=JWT`      |
+| Dashboard | `ws://host/dashboard?token=JWT`   |
 
-Both endpoints are served through nginx, which proxies WebSocket connections to `ws-server:8080`.
+Both endpoints are served through nginx, which proxies WebSocket connections to `ws-server:8080`. The nginx config has dedicated `location /device` and `location /dashboard` blocks with WebSocket upgrade headers.
+
+> **Note:** Earlier versions used `/ws/device` and `/ws/dashboard` paths. These have been replaced with `/device` and `/dashboard` to match the ws-server's path checking logic.
 
 ### Authentication
 

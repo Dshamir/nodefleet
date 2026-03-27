@@ -34,29 +34,32 @@ For a detailed breakdown of the architecture, see [ARCHITECTURE.md](./ARCHITECTU
 git clone <repo>
 cd nodefleet
 cp .env.example .env
+# Edit .env: set DEVICE_TOKEN_SECRET to match NEXTAUTH_SECRET
 docker compose up -d
-# Visit http://localhost:8888
+# Visit http://localhost:50080  (or https://nodefleet.ngrok.dev if ngrok is configured)
 ```
 
 After the services are running:
 
 1. Log in with the default credentials (see below) or register a new account.
 2. **Create a device** in the dashboard -- enter a name, hardware model, and serial number. You will receive a 6-character pairing code valid for 24 hours.
-3. **Pair your ESP32** by calling `POST /api/devices/pair` with `{"pairingCode":"XXXXXX"}`. The response contains a JWT `token` and `wsUrl`.
-4. The ESP32 uses the token to connect via WebSocket (`ws://<server>:8081/device?token=...`). The device appears online in the dashboard.
+3. **Flash the ESP32 firmware** -- see [firmware/esp32_agent/README.md](./firmware/esp32_agent/README.md). Set WiFi credentials, server host, and pairing code in `config.h`. Flash via PlatformIO or Arduino IDE.
+4. The ESP32 pairs automatically on first boot, connects via WebSocket, and begins streaming heartbeat + GPS telemetry to the dashboard.
 
 ## Port Mappings
 
-| Service        | Host Port | Description              |
-|----------------|-----------|--------------------------|
-| Nginx          | 8888      | Main entry point         |
-| Web (Next.js)  | 3002      | Direct web access        |
-| WebSocket      | 8081      | Real-time device comms   |
-| PostgreSQL     | 5433      | Database                 |
-| Redis          | 6381      | Cache & pub/sub          |
-| MinIO API      | 9000      | Object storage           |
-| MinIO Console  | 9001      | Storage UI               |
-| UDP Discovery  | 5555 (UDP) | Device auto-discovery |
+| Service        | Host Port | Container Port | Description              |
+|----------------|-----------|----------------|--------------------------|
+| Nginx          | 50080     | 80             | Main entry point (HTTP)  |
+| Nginx          | 50443     | 443            | Main entry point (HTTPS) |
+| Web (Next.js)  | 50300     | 3000           | Direct web access        |
+| WebSocket      | 50081     | 8080           | Real-time device comms   |
+| PostgreSQL     | 50432     | 5432           | Database                 |
+| Redis          | 50379     | 6379           | Cache & pub/sub          |
+| MinIO API      | 50900     | 9000           | Object storage           |
+| MinIO Console  | 50901     | 9001           | Storage UI               |
+| UDP Discovery  | 50555     | 5555 (UDP)     | Device auto-discovery    |
+| ngrok          | 50040     | 4040           | Tunnel dashboard         |
 
 ## Default Test Credentials
 
@@ -107,14 +110,32 @@ nodefleet/
 - **Dashboard stats API** -- Real-time dashboard statistics (total devices, online count, media files, storage used, activity) fetched from the database. Zero hardcoded data across all pages.
 - **Device Auto-Discovery** - UDP broadcast and mDNS for zero-config LAN setup
 
+## Verified Hardware
+
+The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G-4G** board. See [HARDWARE_ALTERNATIVES.md](./HARDWARE_ALTERNATIVES.md) for compatible boards and alternatives.
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| WiFi + WebSocket | Working | Auto-reconnect with exponential backoff |
+| LTE Cat-1 (SIM7670G) | Working | GPIO17/18 UART, AT+CEREG for LTE registration |
+| GPS/GNSS | Working | AT+CGPSINFO, NMEA to decimal degree conversion |
+| Camera (OV2640) | Pending | Correct pins (VSYNC=42, HREF=41, PCLK=46, XCLK=39), requires DIP switch + ribbon cable |
+| Heartbeat telemetry | Working | 30s interval, persisted to PostgreSQL |
+| Signal strength | Working | CSQ to dBm conversion (-113 + 2*rssi) |
+| Remote commands | Working | Command queue drain + ack pipeline |
+| Photo upload | Coded | Presigned URL upload to MinIO (needs camera hardware) |
+
 ## Documentation
 
 - [ARCHITECTURE.md](./ARCHITECTURE.md) -- System architecture, data flows, and service descriptions
 - [docs/API.md](./docs/API.md) -- REST and WebSocket API reference
 - [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) -- Production deployment guide
 - [docs/USER_GUIDE.md](./docs/USER_GUIDE.md) -- End-user documentation
-- [firmware/esp32_agent/README.md](./firmware/esp32_agent/README.md) -- ESP32 firmware setup and flashing instructions
-- [Device Discovery](docs/DEVICE_DISCOVERY.md) - ESP32 auto-discovery protocols (UDP + mDNS)
+- [docs/WEBSOCKET_PROTOCOL.md](./docs/WEBSOCKET_PROTOCOL.md) -- WebSocket message specification
+- [docs/DEVICE_DISCOVERY.md](./docs/DEVICE_DISCOVERY.md) -- ESP32 auto-discovery protocols (UDP + mDNS)
+- [firmware/esp32_agent/README.md](./firmware/esp32_agent/README.md) -- ESP32 firmware setup and flashing
+- [HARDWARE_ALTERNATIVES.md](./HARDWARE_ALTERNATIVES.md) -- Compatible boards and buying guide
+- [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) -- Known issues, gaps, and recommendations
 
 ## License
 
