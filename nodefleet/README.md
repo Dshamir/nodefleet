@@ -78,6 +78,8 @@ nodefleet/
 │   ├── modem.cpp/h          # SIM7670G LTE + GPS driver
 │   ├── camera.cpp/h         # OV2640 DVP camera driver
 │   ├── battery.cpp/h        # MAX17048 I2C fuel gauge
+│   ├── mqtt_client.cpp/h    # MQTT publisher (PubSubClient)
+│   ├── wifi_provision.cpp/h # AP captive portal for first-time setup
 │   ├── storage.cpp/h        # NVS + SD card storage
 │   ├── websocket_client.cpp/h # WebSocket with auto-reconnect
 │   └── platformio.ini       # PlatformIO build config
@@ -133,6 +135,8 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | Remote commands | Working | 12 commands, fleet broadcast, 5-min timeout, audit trail |
 | OTA firmware update | Working | HTTPUpdate + presigned MinIO URLs |
 | MQTT broker | Running | Mosquitto 2 in docker-compose (port 51883 + WS 59001) |
+| MQTT device client | Working | PubSubClient publishes telemetry + GPS to broker (dual-protocol) |
+| WiFi provisioning | Working | AP captive portal ("NodeFleet-Setup") when WiFi fails — configure WiFi, server, MQTT, pairing |
 | Webhooks | Working | HMAC-SHA256 signed, 5 event types, CRUD API |
 | Audit trail | Working | Immutable log, 19 event types, filterable viewer |
 | Device diagnostics | Working | Health scoring (0-100), gauges, error log, recommendations |

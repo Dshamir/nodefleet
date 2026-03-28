@@ -186,6 +186,9 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 | No device decommission | DELETE soft-disables + revokes tokens + audit log |
 | No audit trail | `audit_logs` table with 19 event types, filterable viewer at /audit |
 | No MQTT broker | Eclipse Mosquitto 2 added to docker-compose (port 51883) |
+| No MQTT firmware client | PubSubClient added — publishes telemetry + GPS to broker (dual-protocol with WebSocket) |
+| No WiFi provisioning | AP captive portal ("NodeFleet-Setup") when WiFi fails — dark UI configures WiFi, server, MQTT, pairing code |
+| No OTA config | OTA_CHECK_URL, OTA_CHECK_INTERVAL, ENABLE_AUTO_OTA added to config.h |
 | No CI pipeline | GitHub Actions: web typecheck + ws-server typecheck + firmware compile |
 
 ---

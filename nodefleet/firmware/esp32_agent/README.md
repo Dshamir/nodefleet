@@ -52,7 +52,7 @@ pio run --target upload    # Flash to /dev/ttyACM4
    - Install: **esp32 by Espressif (v2.0.8 or later)**
 2. **Board Settings**: ESP32S3 Dev Module, Flash 16MB, DIO, 80MHz, USB CDC on Boot: Disabled
    > **Warning:** Do NOT set PSRAM to "OPI PSRAM" in PlatformIO (`qio_opi` memory type). This crashes the board. Use default PSRAM settings. Camera works in DRAM mode.
-3. **Install Libraries**: ArduinoJson 6.x, WebSockets 2.x, esp32-camera
+3. **Install Libraries**: ArduinoJson 6.x, WebSockets 2.x, esp32-camera, PubSubClient 2.x
 
 ### Required Libraries
 
@@ -60,9 +60,40 @@ pio run --target upload    # Flash to /dev/ttyACM4
 |---------|---------|---------|
 | **ArduinoJson** | ^6.21.0 | JSON parsing/serialization |
 | **WebSockets** (links2004) | ^2.4.1 | Real WebSocket client with TLS |
+| **PubSubClient** (knolleary) | ^2.8.0 | MQTT client for telemetry publishing |
 | **esp32-camera** (espressif) | ^2.0.0 | Camera DVP driver |
 | **HTTPClient** | (built-in) | HTTP requests for pairing/upload |
+| **HTTPUpdate** | (built-in) | OTA firmware update |
+| **WebServer** | (built-in) | WiFi provisioning captive portal |
 | **WiFiClientSecure** | (built-in) | HTTPS support |
+
+## WiFi Provisioning (First-Time Setup)
+
+When the device cannot connect to the configured WiFi network, it automatically starts an AP:
+
+- **AP Name:** `NodeFleet-Setup`
+- **AP Password:** `nodefleet`
+- **Portal URL:** `http://192.168.4.1`
+
+Connect to the AP from your phone/laptop, then configure:
+- WiFi SSID and password
+- NodeFleet server host and port
+- MQTT broker host and port
+- Device pairing code
+
+Settings are saved to NVS and the device reboots to connect.
+
+## MQTT Topics
+
+The device publishes to the Mosquitto broker (port 51883) alongside WebSocket:
+
+| Topic | Payload | Interval |
+|-------|---------|----------|
+| `nodefleet/{id}/telemetry` | `{ battery, signal, cpuTemp, freeMemory, uptime, firmware }` | 30s |
+| `nodefleet/{id}/gps` | `{ lat, lng, alt, speed, heading, satellites }` | 60s |
+| `nodefleet/{id}/status` | `online` / `offline` (retained) | On connect/disconnect |
+
+Subscribe to commands: `nodefleet/{id}/command`
 
 ## Pin Definitions (Waveshare ESP32-S3-SIM7670G-4G)
 
