@@ -42,10 +42,10 @@ Sent periodically by the device to indicate it is alive and to report system met
 
 | Field      | Type   | Description                          |
 |------------|--------|--------------------------------------|
-| battery    | number | Battery level as a percentage (0-100)|
-| signal     | number | WiFi signal strength in dBm          |
-| cpuTemp    | number | CPU temperature in Celsius           |
-| freeMemory | number | Available RAM in bytes               |
+| battery    | number | Battery voltage (0 if ADC disabled)  |
+| signal     | number | LTE signal strength in dBm (from AT+CSQ, converted: -113 + 2*rssi) |
+| cpuTemp    | number | ESP32 internal temperature in Celsius (from `temperatureRead()`) |
+| freeMemory | number | Available heap RAM in bytes          |
 | uptime     | number | Seconds since last boot              |
 
 ### gps

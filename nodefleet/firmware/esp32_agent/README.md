@@ -50,7 +50,8 @@ pio run --target upload    # Flash to /dev/ttyACM4
      https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
      ```
    - Install: **esp32 by Espressif (v2.0.8 or later)**
-2. **Board Settings**: ESP32S3 Dev Module, Flash 16MB, QIO, 80MHz, USB CDC on Boot: Disabled
+2. **Board Settings**: ESP32S3 Dev Module, Flash 16MB, DIO, 80MHz, USB CDC on Boot: Disabled
+   > **Warning:** Do NOT set PSRAM to "OPI PSRAM" in PlatformIO (`qio_opi` memory type). This crashes the board. Use default PSRAM settings. Camera works in DRAM mode.
 3. **Install Libraries**: ArduinoJson 6.x, WebSockets 2.x, esp32-camera
 
 ### Required Libraries
@@ -75,20 +76,22 @@ pio run --target upload    # Flash to /dev/ttyACM4
 | Power Control | **33** | MODEM_POWER_PIN |
 | Baud Rate | 115200 | 5 retry attempts on boot |
 
-### Camera - OV2640 DVP Interface
+### Camera - OV2640 DVP Interface (Verified Working)
 | Signal | GPIO | Notes |
 |--------|------|-------|
 | XCLK | **39** | Master clock (20MHz) |
 | PCLK | **46** | Pixel clock |
 | VSYNC | **42** | Vertical sync |
 | HREF | **41** | Horizontal reference |
-| SIOD (SDA) | **15** | I2C data |
-| SIOC (SCL) | **16** | I2C clock |
+| SIOD (SDA) | **15** | I2C data (SCCB) |
+| SIOC (SCL) | **16** | I2C clock (SCCB) |
 | Y2-Y9 (D0-D7) | **7,8,9,10,11,12,13,14** | 8-bit parallel data |
 
-> **Important**: Camera pins GPIO10-13 overlap with SD card SPI pins. Camera and SD card **cannot be used simultaneously** on this board.
+> **Important**: Camera pins GPIO10-13 overlap with SD card SPI pins. Use SDMMC mode (pins 4/5/6) for SD card to avoid conflict.
 
-> **DIP Switch**: The CAM switch on the back of the board must be in the ON position for camera power.
+> **DIP Switch**: The CAM switch on the back of the board must be ON.
+
+> **PSRAM Warning**: Do NOT set `board_build.arduino.memory_type = qio_opi` in PlatformIO. This crashes `esp_camera_init()`. Use default memory settings — camera works in DRAM mode (SVGA, ~30-80KB JPEG).
 
 ### GPIO - Status & Control
 | Function | GPIO | Notes |
@@ -114,8 +117,8 @@ Edit `config.h` to customize:
 // Pairing -- get this from the dashboard after creating a device
 #define PAIRING_CODE      "XXXXXX"
 
-// Features -- camera requires DIP switch ON + ribbon cable connected
-#define ENABLE_CAMERA     0   // Set to 1 when camera hardware is verified
+// Features
+#define ENABLE_CAMERA     1   // OV2640 verified working (DIP switch CAM must be ON)
 #define ENABLE_GPS        1
 #define ENABLE_SD_CARD    0   // Pins conflict with camera
 #define ENABLE_WATCHDOG   1

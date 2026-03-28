@@ -118,12 +118,15 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 |---------|--------|-------|
 | WiFi + WebSocket | Working | Auto-reconnect with exponential backoff |
 | LTE Cat-1 (SIM7670G) | Working | GPIO17/18 UART, AT+CEREG for LTE registration |
-| GPS/GNSS | Working | AT+CGPSINFO, NMEA to decimal degree conversion |
-| Camera (OV2640) | Pending | Correct pins (VSYNC=42, HREF=41, PCLK=46, XCLK=39), requires DIP switch + ribbon cable |
+| GPS/GNSS | Working | AT+CGPSINFO, NMEA to decimal degree conversion, 60s updates |
+| Camera (OV2640) | Working | Pins: VSYNC=42, HREF=41, PCLK=46, XCLK=39. DRAM mode (no PSRAM flag) |
 | Heartbeat telemetry | Working | 30s interval, persisted to PostgreSQL |
 | Signal strength | Working | CSQ to dBm conversion (-113 + 2*rssi) |
 | Remote commands | Working | Command queue drain + ack pipeline |
-| Photo upload | Coded | Presigned URL upload to MinIO (needs camera hardware) |
+| Photo capture + upload | Working | Presigned URL upload to MinIO via `/api/devices/upload` |
+| Battery monitoring | Not working | GPIO0 invalid on ESP32-S3; use AT+CBC or MAX17048 I2C fuel gauge |
+| Audio recording | Not implemented | Requires external I2S MEMS microphone (INMP441) |
+| OTA firmware update | Not implemented | Stub exists, needs httpUpdate integration |
 
 ## Documentation
 

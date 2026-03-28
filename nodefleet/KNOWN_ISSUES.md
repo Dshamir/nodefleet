@@ -1,28 +1,26 @@
 # NodeFleet - Known Issues, Gaps & Recommendations
 
-Last updated: 2026-03-27
+Last updated: 2026-03-28
 
 ---
 
-## Critical Issues
+## Resolved Issues
 
-### 1. Camera Init Crashes ESP32 (WDT Reset)
+### 1. Camera Init Crashed ESP32 (WDT Reset) — RESOLVED
 
-**Status:** Unresolved (hardware verification needed)
+**Status:** Fixed (2026-03-28)
 
-`esp_camera_init()` causes a watchdog timer reset (`TG1WDT_SYS_RST`) when called, even with the correct pin mapping from the working `branch-to-merge` (VSYNC=42, HREF=41, PCLK=46, XCLK=39). PSRAM is detected. The crash occurs inside the camera driver before any error code is returned.
+**Root cause:** `board_build.arduino.memory_type = qio_opi` in `platformio.ini` caused the PSRAM to be misconfigured. The `esp_camera_init()` function tried to allocate frame buffers in PSRAM that was incorrectly initialized, causing a watchdog timer reset (`TG1WDT_SYS_RST`). This was NOT a hardware issue — the camera ribbon cable and DIP switch were fine.
 
-**Root cause candidates:**
-- Camera ribbon cable not properly seated (FPC latch not closed)
-- DIP switch on the back of the board not set to CAM position
-- Camera module defective or incompatible (OV5640 shipped instead of OV2640)
-- Camera FPC connector on the wrong port (some boards have display + camera connectors)
+**Fix:** Remove the `board_build.arduino.memory_type` setting entirely from `platformio.ini`. The board defaults work correctly. Camera now initializes in DRAM mode (SVGA resolution, 1 frame buffer) without PSRAM. For PSRAM-enabled mode (VGA, 2 frame buffers), the correct memory type for this board still needs to be determined.
 
-**Workaround:** Camera is disabled (`ENABLE_CAMERA 0`). The firmware boots cleanly and all other features work. To re-enable, set `ENABLE_CAMERA 1` in `config.h` after physically verifying the camera connection.
+**Verified camera pins (from branch-to-merge):** VSYNC=42, HREF=41, PCLK=46, XCLK=39, SIOD=15, SIOC=16, Y2-Y9=7-14.
 
-**Recommendation:** Physically inspect the board. Check: (1) DIP switch CAM position, (2) ribbon cable orientation (gold contacts facing board), (3) FPC latch fully closed.
+---
 
-### 2. SIM Card Detection Intermittent
+## Open Issues
+
+### 1. SIM Card Detection Intermittent
 
 **Status:** Intermittent
 
@@ -55,25 +53,35 @@ The ws-server received heartbeat and GPS data via WebSocket but only published t
 
 **Recommendation:** Add a periodic command queue poll (every 30s) in the ws-server's heartbeat handler, or switch to Redis pub/sub for immediate command delivery.
 
-### 3. Photo Upload Pipeline Not End-to-End Tested
+### 3. Photo Upload Pipeline Needs End-to-End Testing
 
-**Status:** Coded but untested
+**Status:** Camera working, upload pipeline coded
 
-The full pipeline exists:
-1. Device captures JPEG via `esp_camera_fb_get()`
+The full pipeline exists and camera init is verified working:
+1. Device captures JPEG via `esp_camera_fb_get()` (SVGA in DRAM mode)
 2. Device requests presigned upload URL from `/api/devices/upload`
 3. Device PUTs the JPEG to MinIO via the presigned URL
 4. Device sends `media_ready` WebSocket message
 
-**Gap:** Cannot test because camera init crashes. Once camera hardware works, the pipeline should work but may need debugging (presigned URL expiry, MinIO CORS, large file handling on ESP32).
+**Potential issues:** Presigned URL expiry, MinIO CORS config, large JPEG uploads from ESP32 (SVGA ~30-80KB), HTTP client memory pressure on ESP32 during upload.
 
-### 4. Battery ADC Pin Not Verified
+### 4. Battery Monitoring Not Working
 
-**Status:** Unknown
+**Status:** Disabled
 
-GPIO1 is configured as the battery ADC pin but reads near-zero voltage. The correct battery voltage divider pin for this board is not documented in the Waveshare schematic.
+GPIO0 is not a valid ADC pin on ESP32-S3 (strapping pin). Battery ADC pin is set to -1 (disabled). The Waveshare board has a **MAX17048G fuel gauge IC** on I2C (address 0x36) that provides battery voltage and percentage — this is the correct way to read battery on this board.
 
-**Recommendation:** Check the Waveshare schematic for the battery monitoring circuit. Common pins: GPIO1, GPIO2, GPIO4. Some boards route battery through the SIM7670G's built-in fuel gauge (accessible via AT commands: `AT+CBC`).
+**Recommendation:** Use the MAX17048 I2C fuel gauge instead of raw ADC. I2C pins are GPIO15/16 (shared with camera SCCB, but accessible when camera is idle). Alternatively, use modem AT command `AT+CBC` for battery level.
+
+### 5. PSRAM Not Detected
+
+**Status:** Known limitation
+
+The board has 8MB OPI PSRAM but `psramFound()` returns false with the current PlatformIO config. The `board_build.arduino.memory_type = qio_opi` setting crashes the board. Camera operates in DRAM mode (SVGA, 1 frame buffer) instead of PSRAM mode (VGA, 2 frame buffers).
+
+**Impact:** Lower camera resolution and single frame buffer. Photo capture still works but at SVGA instead of VGA.
+
+**Recommendation:** Investigate the correct `memory_type` for this board variant (ESP32-S3R8). Options to try: `opi_opi`, `qio_qspi`, or compile via Arduino IDE with "PSRAM: OPI PSRAM" to capture the correct sdkconfig.
 
 ### 5. OTA Firmware Update Not Implemented
 
@@ -135,5 +143,7 @@ Device JWT tokens are issued for 365 days and never rotated. If a token is compr
 | Heartbeat field names mismatched server expectations | Renamed `battery_voltage` -> `battery`, `signal_strength` -> `signal`, etc. |
 | Pairing response field wrong (`device_token` vs `token`) | Fixed to read `token` field |
 | SSL connection failed to ngrok | Switched to local HTTP for development (`USE_SSL 0`) |
-| ADC spam from GPIO0 (not valid ADC on ESP32-S3) | Changed to GPIO1 |
+| ADC spam from GPIO0 (not valid ADC on ESP32-S3) | Disabled battery ADC (set to -1) |
 | Signal strength reported as raw CSQ (0-31) | Added dBm conversion (`-113 + 2*rssi`) |
+| Camera crash (WDT reset) on `esp_camera_init()` | Root cause: `qio_opi` memory type in platformio.ini. Fix: remove the setting, use board defaults |
+| Camera pins wrong (GPIO34/35/36/37) | Corrected to VSYNC=42, HREF=41, PCLK=46, XCLK=39 (from branch-to-merge) |

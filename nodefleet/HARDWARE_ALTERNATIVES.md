@@ -27,16 +27,17 @@ This document lists ESP32-based development boards with camera, GPS, and cellula
 
 **Package contents:** Board, acrylic case, GNSS ceramic antenna, OV2640 camera, FPC antenna, pin headers, USB cable, screwdriver, double-sided tape.
 
-**Verified firmware features:** WiFi, WebSocket, LTE registration, GPS (AT+CGPSINFO), heartbeat telemetry, remote commands, NVS token persistence.
+**Verified firmware features:** WiFi, WebSocket, LTE registration, GPS (AT+CGPSINFO), camera (OV2640 SVGA JPEG), heartbeat telemetry, remote commands, photo capture + upload, NVS token persistence.
 
 **Known issues on this board:**
-- Camera ribbon cable must be seated with gold contacts facing the board + DIP switch CAM = ON
-- Modem UART pins are GPIO17 (RX) / GPIO18 (TX), NOT GPIO8/9
+- `board_build.arduino.memory_type = qio_opi` in PlatformIO crashes the board -- must use default memory config
+- PSRAM not detected with default config (camera runs in DRAM mode, SVGA resolution)
+- Modem UART pins are GPIO17 (RX) / GPIO18 (TX), NOT GPIO8/9 as commonly documented
 - Modem power pin is GPIO33
-- Camera and SD card pins conflict (GPIO10-13) -- cannot use both simultaneously
-- `esp_camera_init()` crashes with WDT reset if camera ribbon cable is not properly connected
+- Camera and SPI SD card pins conflict (GPIO10-13) -- use SDMMC mode (pins 4/5/6) for SD
+- SIM card detection intermittent on first AT probe (retry loop needed, usually works on attempt 2)
 - No VoLTE support on SIM7670G -- microphone/speaker limited to basic AT telephony
-- Battery ADC pin not definitively identified (GPIO1 configured, reads near-zero)
+- Battery monitoring via GPIO ADC doesn't work (GPIO0 invalid on ESP32-S3) -- use MAX17048 I2C fuel gauge (0x36) or AT+CBC
 
 ---
 
