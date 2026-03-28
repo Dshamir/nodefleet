@@ -54,9 +54,11 @@ Commands:
   tunnel                     Show ngrok tunnel status & URL
   setup                      Bootstrap .env from .env.example
   simulate [--pair CODE]     Run device simulator (no hardware needed)
+  compile                    Compile ESP32 firmware only (no flash)
   flash                      Compile + flash ESP32 firmware via PlatformIO
   mqtt                       Show MQTT broker status + test publish
   db [sql]                   Run SQL query against PostgreSQL
+  migrate                    Create/verify all database tables
   -h, --help                 Show this help
 
 Services: web, ws-server, nginx, postgres, redis, minio, mqtt, ngrok
@@ -87,7 +89,7 @@ MODE="default"
 SERVICES=()
 
 case "${1:-}" in
-  rebuild|restart|logs|shell|down|health|bump|tunnel|setup|simulate|flash|mqtt|db)
+  rebuild|restart|logs|shell|down|health|bump|tunnel|setup|simulate|compile|flash|mqtt|db|migrate)
     MODE="$1"; shift; SERVICES=("$@") ;;
   -h|--help)
     print_help ;;
@@ -157,10 +159,11 @@ do_setup() {
   echo -e "${BLUE}▸ Bootstrapping .env from .env.example...${RESET}"
   cp .env.example .env
 
-  # Generate a random NEXTAUTH_SECRET
+  # Generate a random NEXTAUTH_SECRET and sync DEVICE_TOKEN_SECRET
   local secret
   secret=$(openssl rand -base64 32 | tr -d '/+=' | head -c 40)
   sed -i "s|NEXTAUTH_SECRET=change-me-in-production|NEXTAUTH_SECRET=${secret}|" .env
+  sed -i "s|DEVICE_TOKEN_SECRET=change-me-in-production|DEVICE_TOKEN_SECRET=${secret}|" .env
 
   echo -e "${GREEN}✓ .env created${RESET}"
   echo ""
@@ -284,7 +287,22 @@ wait_for_services() {
   [ $elapsed -ge $max_wait ] && echo -e "\n${YELLOW}  ⚠ Web timeout — continuing${RESET}"
   echo ""
 
-  # Stage 6: Nginx
+  # Stage 6: MQTT Broker
+  echo -e "${YELLOW}▸ Waiting for MQTT Broker...${RESET}"
+  max_wait=30; elapsed=0
+  while [ $elapsed -lt $max_wait ]; do
+    if docker compose exec -T mqtt mosquitto_sub -t '$SYS/#' -C 1 -W 2 >/dev/null 2>&1; then
+      echo -e "${GREEN}  ✓ MQTT Broker ready${RESET}"
+      break
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+    echo -ne "\r${DIM}    ${elapsed}s / ${max_wait}s${RESET}  "
+  done
+  [ $elapsed -ge $max_wait ] && echo -e "\n${YELLOW}  ⚠ MQTT Broker timeout — continuing${RESET}"
+  echo ""
+
+  # Stage 7: Nginx
   echo -e "${YELLOW}▸ Waiting for Nginx...${RESET}"
   max_wait=30; elapsed=0
   while [ $elapsed -lt $max_wait ]; do
@@ -297,6 +315,31 @@ wait_for_services() {
     echo -ne "\r${DIM}    ${elapsed}s / ${max_wait}s${RESET}  "
   done
   [ $elapsed -ge $max_wait ] && echo -e "\n${YELLOW}  ⚠ Nginx timeout — continuing${RESET}"
+  echo ""
+
+  # Stage 8: Verify MinIO bucket exists
+  echo -e "${YELLOW}▸ Verifying MinIO bucket...${RESET}"
+  docker compose exec -T minio sh -c "
+    mc alias set local http://localhost:9000 minioadmin minioadmin 2>/dev/null;
+    mc mb local/nodefleet-media --ignore-existing 2>/dev/null
+  " >/dev/null 2>&1
+  echo -e "${GREEN}  ✓ MinIO bucket 'nodefleet-media' ready${RESET}"
+  echo ""
+
+  # Stage 9: Verify database tables
+  echo -e "${YELLOW}▸ Verifying database schema...${RESET}"
+  local missing_tables=0
+  for tbl in devices telemetry_records gps_records device_commands media_files audit_logs device_settings alert_rules webhooks; do
+    if ! docker compose exec -T postgres psql -U nodefleet -d nodefleet -tAc "SELECT 1 FROM information_schema.tables WHERE table_name='$tbl'" 2>/dev/null | grep -q 1; then
+      echo -e "  ${YELLOW}⚠ Missing table: $tbl${RESET}"
+      missing_tables=$((missing_tables + 1))
+    fi
+  done
+  if [ $missing_tables -eq 0 ]; then
+    echo -e "${GREEN}  ✓ All 9 required tables present${RESET}"
+  else
+    echo -e "${YELLOW}  ⚠ $missing_tables table(s) missing — run database migrations${RESET}"
+  fi
   echo ""
 }
 
@@ -603,6 +646,19 @@ do_simulate() {
   node tools/device-simulator.js "${sim_args[@]}"
 }
 
+# ── Firmware Compile Only ──────────────────────────────────────────────────
+do_compile() {
+  local pio_bin="${HOME}/.local/bin/pio"
+  echo -e "${BLUE}▸ Compiling ESP32 firmware...${RESET}"
+  if [ ! -x "$pio_bin" ]; then
+    echo -e "${RED}Error: PlatformIO not found at $pio_bin${RESET}"
+    echo -e "${DIM}  Install: pip3 install platformio${RESET}"; exit 1
+  fi
+  (cd firmware/esp32_agent && "$pio_bin" run) || { echo -e "${RED}  Build failed!${RESET}"; exit 1; }
+  echo -e "${GREEN}✓ Firmware compiled successfully${RESET}"
+  echo ""
+}
+
 # ── Firmware Flash ────────────────────────────────────────────────────────
 do_flash() {
   local pio_bin="${HOME}/.local/bin/pio"
@@ -636,6 +692,100 @@ do_mqtt() {
   else
     echo -e "  ${RED}○${RESET} MQTT not running. Start with: ./nodefleet.sh"
   fi
+  echo ""
+}
+
+# ── Database Migration ─────────────────────────────────────────────────────
+do_migrate() {
+  echo -e "${BLUE}▸ Running database migrations...${RESET}"
+  echo ""
+
+  docker compose exec -T postgres psql -U nodefleet -d nodefleet <<'SQLEOF'
+-- Enums (idempotent)
+DO $$ BEGIN CREATE TYPE audit_action AS ENUM (
+  'device_created','device_updated','device_deleted','device_paired',
+  'device_connected','device_disconnected','command_sent','command_completed',
+  'command_failed','command_timeout','settings_changed','user_login',
+  'user_logout','firmware_updated','config_changed','alert_triggered',
+  'media_uploaded','device_rebooted','factory_reset'
+); EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE alert_operator AS ENUM ('lt','gt','eq');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE alert_action_type AS ENUM ('log','webhook','command');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN CREATE TYPE webhook_event AS ENUM ('device_online','device_offline','command_completed','alert_triggered','low_battery');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+-- Tables (idempotent)
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
+  action audit_action NOT NULL,
+  entity_type VARCHAR(50),
+  entity_id VARCHAR(255),
+  details JSONB,
+  ip_address VARCHAR(45),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS device_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id UUID NOT NULL UNIQUE REFERENCES devices(id) ON DELETE CASCADE,
+  camera_enabled BOOLEAN NOT NULL DEFAULT true,
+  audio_enabled BOOLEAN NOT NULL DEFAULT false,
+  gps_enabled BOOLEAN NOT NULL DEFAULT true,
+  lte_enabled BOOLEAN NOT NULL DEFAULT true,
+  mqtt_enabled BOOLEAN NOT NULL DEFAULT false,
+  heartbeat_interval INTEGER NOT NULL DEFAULT 30000,
+  gps_interval INTEGER NOT NULL DEFAULT 60000,
+  camera_resolution VARCHAR(20) NOT NULL DEFAULT 'QVGA',
+  audio_sample_rate INTEGER NOT NULL DEFAULT 16000,
+  power_mode VARCHAR(20) NOT NULL DEFAULT 'active',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  device_id UUID REFERENCES devices(id) ON DELETE CASCADE,
+  metric VARCHAR(50) NOT NULL,
+  operator alert_operator NOT NULL,
+  threshold REAL NOT NULL,
+  action alert_action_type NOT NULL DEFAULT 'log',
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  last_triggered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS webhooks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  url VARCHAR(500) NOT NULL,
+  events JSONB NOT NULL,
+  secret VARCHAR(255) NOT NULL,
+  enabled BOOLEAN NOT NULL DEFAULT true,
+  last_triggered_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Indexes (idempotent)
+CREATE INDEX IF NOT EXISTS audit_logs_org_id_idx ON audit_logs(org_id);
+CREATE INDEX IF NOT EXISTS audit_logs_device_id_idx ON audit_logs(device_id);
+CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS device_settings_device_id_idx ON device_settings(device_id);
+CREATE INDEX IF NOT EXISTS alert_rules_org_id_idx ON alert_rules(org_id);
+CREATE INDEX IF NOT EXISTS alert_rules_device_id_idx ON alert_rules(device_id);
+CREATE INDEX IF NOT EXISTS webhooks_org_id_idx ON webhooks(org_id);
+SQLEOF
+
+  echo -e "${GREEN}✓ Database migration complete${RESET}"
   echo ""
 }
 
@@ -696,8 +846,15 @@ case "$MODE" in
   simulate)
     do_simulate
     ;;
+  compile)
+    do_compile
+    ;;
   flash)
     do_flash
+    ;;
+  migrate)
+    check_env
+    do_migrate
     ;;
   mqtt)
     do_mqtt
