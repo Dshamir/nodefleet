@@ -145,6 +145,24 @@ services:
       timeout: 5s
       retries: 5
 
+  mqtt:
+    image: eclipse-mosquitto:2
+    container_name: nodefleet-mqtt
+    ports:
+      - "51883:1883"
+      - "59001:9001"
+    volumes:
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+      - ./mqtt/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - nodefleet-net
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   ngrok:
     image: ngrok/ngrok:latest
     container_name: nodefleet-ngrok
@@ -163,6 +181,8 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
+  mqtt_data:
+  mqtt_log:
 
 networks:
   nodefleet-net:

@@ -1028,6 +1028,28 @@ class NodeFleetWSServer {
         this.logger.info('Device path: /device?token=xxx');
         this.logger.info('Dashboard path: /dashboard?token=xxx');
 
+        // Telemetry retention: clean up records older than 90 days on startup
+        this.db.query(
+          `DELETE FROM telemetry_records WHERE timestamp < NOW() - INTERVAL '90 days'`
+        ).then(res => {
+          if (res.rowCount && res.rowCount > 0) {
+            this.logger.info(`Telemetry retention: cleaned ${res.rowCount} records older than 90 days`);
+          }
+        }).catch(err => this.logger.error('Telemetry retention cleanup failed', err));
+
+        this.db.query(
+          `DELETE FROM gps_records WHERE timestamp < NOW() - INTERVAL '90 days'`
+        ).then(res => {
+          if (res.rowCount && res.rowCount > 0) {
+            this.logger.info(`GPS retention: cleaned ${res.rowCount} records older than 90 days`);
+          }
+        }).catch(err => this.logger.error('GPS retention cleanup failed', err));
+
+        // Mark stale offline devices (no heartbeat > 5 minutes)
+        this.db.query(
+          `UPDATE devices SET status = 'offline' WHERE status = 'online' AND last_heartbeat_at < NOW() - INTERVAL '5 minutes'`
+        ).catch(() => {});
+
         // Start discovery services
         if (this.ENABLE_DISCOVERY) {
           try {
