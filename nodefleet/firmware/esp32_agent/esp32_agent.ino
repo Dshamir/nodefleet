@@ -18,6 +18,12 @@
 #include "storage.h"
 #include "websocket_client.h"
 #include "battery.h"
+#if USE_MQTT
+#include "mqtt_client.h"
+#endif
+#if ENABLE_WIFI_PROVISION
+#include "wifi_provision.h"
+#endif
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
@@ -33,6 +39,16 @@ CameraModule camera;
 StorageManager storage;
 WebSocketClient ws_client(SERVER_HOST, SERVER_PORT, DEVICE_WS_URL);
 BatteryGauge battery_gauge(CAMERA_SIOD, CAMERA_SIOC);  // Shared I2C bus (GPIO15/16)
+#if USE_MQTT
+NodeFleetMQTT mqtt_client;
+#endif
+#if ENABLE_WIFI_PROVISION
+WiFiProvisioner wifi_provisioner;
+bool provisioning_mode = false;
+#endif
+
+// OTA auto-check timing
+uint32_t last_ota_check_ms = 0;
 
 // ============================================================================
 // Global State
@@ -196,6 +212,26 @@ void setup() {
         }
     }
 
+    // Initialize MQTT client
+#if USE_MQTT
+    if (device_state.wifi_connected) {
+        String mqtt_broker = MQTT_BROKER_HOST;
+        uint16_t mqtt_port = MQTT_BROKER_PORT;
+
+        // Check NVS for custom MQTT settings (from provisioning portal)
+        String nvs_broker, nvs_port;
+        if (storage.nvs_loadConfig("mqtt_broker", nvs_broker) && nvs_broker.length() > 0) {
+            mqtt_broker = nvs_broker;
+        }
+        if (storage.nvs_loadConfig("mqtt_port", nvs_port) && nvs_port.length() > 0) {
+            mqtt_port = nvs_port.toInt();
+        }
+
+        mqtt_client.begin(mqtt_broker.c_str(), mqtt_port,
+                          device_state.is_paired ? device_state.device_token.substring(device_state.device_token.length() - 8).c_str() : "unregistered");
+    }
+#endif
+
     // Setup watchdog timer
 #if ENABLE_WATCHDOG
     watchdog_timer = timerBegin(0, 80, true);
@@ -243,11 +279,23 @@ void loop() {
     // WebSocket keep-alive and message handling
     ws_client.update();
 
+#if USE_MQTT
+    // MQTT loop (reconnect + message pump)
+    mqtt_client.loop();
+#endif
+
     // Send heartbeat at interval
     uint32_t now = millis();
     if (now - last_heartbeat_ms >= current_heartbeat_interval) {
         last_heartbeat_ms = now;
         sendHeartbeat();
+
+#if USE_MQTT
+        // Also publish to MQTT
+        mqtt_client.publishHeartbeat(
+            device_state.battery_voltage, device_state.signal_strength,
+            temperatureRead(), esp_get_free_heap_size(), device_state.uptime_ms / 1000);
+#endif
     }
 
     // Update GPS at interval
@@ -336,6 +384,43 @@ void initializeWiFi() {
         device_state.wifi_connected = true;
     } else {
         LOG_WARN("WiFi connection failed");
+#if ENABLE_WIFI_PROVISION
+        // Start captive portal for WiFi configuration
+        LOG_INFO("Starting WiFi provisioning portal...");
+        provisioning_mode = true;
+        wifi_provisioner.startAP(AP_SSID, AP_PASSWORD);
+
+        // Block until provisioned or timeout (5 minutes)
+        uint32_t provision_start = millis();
+        while (!wifi_provisioner.isProvisioned() && millis() - provision_start < 300000) {
+            wifi_provisioner.handleClient();
+            delay(10);
+        }
+
+        if (wifi_provisioner.isProvisioned()) {
+            wifi_provisioner.stopAP();
+            provisioning_mode = false;
+
+            // Save new credentials to NVS
+            storage.nvs_saveConfig("wifi_ssid", wifi_provisioner.getSSID());
+            storage.nvs_saveConfig("wifi_pass", wifi_provisioner.getPassword());
+            storage.nvs_saveConfig("server_host", wifi_provisioner.getServerHost());
+            storage.nvs_saveConfig("server_port", wifi_provisioner.getServerPort());
+            storage.nvs_saveConfig("mqtt_broker", wifi_provisioner.getMQTTBroker());
+            storage.nvs_saveConfig("mqtt_port", wifi_provisioner.getMQTTPort());
+            if (wifi_provisioner.getPairingCode().length() > 0) {
+                storage.nvs_savePairingCode(wifi_provisioner.getPairingCode());
+            }
+
+            LOG_INFO("Provisioning complete. Rebooting to apply...");
+            delay(1000);
+            ESP.restart();
+        } else {
+            LOG_WARN("Provisioning timeout — continuing without WiFi");
+            wifi_provisioner.stopAP();
+            provisioning_mode = false;
+        }
+#endif
     }
 }
 
@@ -969,6 +1054,9 @@ void updateGPS() {
     if (modem.getGPSFix(lat, lon, alt, acc, spd, hdg, sats)) {
         device_state.has_gps_fix = true;
         ws_client.sendGPS(lat, lon, alt, acc, spd, hdg, sats);
+#if USE_MQTT
+        mqtt_client.publishGPS(lat, lon, alt, spd, hdg, sats);
+#endif
         LOG_INFO("GPS: %.4f, %.4f (alt: %.1f m, sats: %d)", lat, lon, alt, sats);
 
         if (ENABLE_SD_CARD && storage.sd_isReady()) {

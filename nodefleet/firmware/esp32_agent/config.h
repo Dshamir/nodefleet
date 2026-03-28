@@ -20,11 +20,35 @@
 #define USE_SSL           0  // 0 = plain HTTP/WS (local), 1 = HTTPS/WSS (ngrok)
 
 // ============================================================================
+// MQTT Configuration
+// ============================================================================
+#define MQTT_BROKER_HOST  "192.168.0.19"
+#define MQTT_BROKER_PORT  51883
+#define MQTT_TOPIC_PREFIX "nodefleet/"
+#define MQTT_PUBLISH_INTERVAL_MS 30000  // Same as heartbeat
+#define USE_MQTT          1  // 1 = publish telemetry to MQTT broker
+
+// ============================================================================
+// WiFi Provisioning (AP mode for first-time setup)
+// ============================================================================
+#define AP_SSID           "NodeFleet-Setup"
+#define AP_PASSWORD       "nodefleet"
+#define AP_PORTAL_PORT    80
+#define ENABLE_WIFI_PROVISION 1  // 1 = start AP if WiFi fails
+
+// ============================================================================
+// OTA Configuration
+// ============================================================================
+#define OTA_CHECK_URL     ""  // Server URL to check for firmware updates (set via set_config)
+#define OTA_CHECK_INTERVAL_MS 3600000  // Check every 1 hour
+#define ENABLE_AUTO_OTA   0  // 1 = auto-check for updates, 0 = manual only
+
+// ============================================================================
 // Pairing & Device Identity
 // ============================================================================
 #define PAIRING_CODE      "9KA7BZ"  // Set during provisioning
 #define DEVICE_MODEL      "Waveshare-ESP32-S3-SIM7670G"
-#define FIRMWARE_VERSION  "1.0.0"
+#define FIRMWARE_VERSION  "1.1.0"
 
 // ============================================================================
 // Heartbeat & Telemetry Intervals (milliseconds)
