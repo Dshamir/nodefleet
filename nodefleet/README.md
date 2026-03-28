@@ -72,23 +72,31 @@ After the services are running:
 
 ```
 nodefleet/
-├── firmware/              # Device firmware
-│   └── esp32_agent/       # ESP32 agent source code
-├── nginx/                 # Nginx reverse proxy configuration
-│   ├── Dockerfile
-│   └── nginx.conf
-├── web/                   # Next.js 14 web application
+├── firmware/esp32_agent/    # ESP32-S3 SIM7670G firmware (C++)
+│   ├── esp32_agent.ino      # Main sketch (12 commands, OTA, power profiles)
+│   ├── config.h             # Pin mapping, WiFi, server config
+│   ├── modem.cpp/h          # SIM7670G LTE + GPS driver
+│   ├── camera.cpp/h         # OV2640 DVP camera driver
+│   ├── battery.cpp/h        # MAX17048 I2C fuel gauge
+│   ├── storage.cpp/h        # NVS + SD card storage
+│   ├── websocket_client.cpp/h # WebSocket with auto-reconnect
+│   └── platformio.ini       # PlatformIO build config
+├── web/                     # Next.js 14 dashboard + API (38 routes)
 │   └── src/
-│       ├── app/           # App Router pages and API routes
-│       ├── components/    # React components
-│       ├── lib/           # Shared libraries (auth, db, utils)
-│       └── middleware.ts  # Edge-compatible auth middleware
-├── ws-server/             # WebSocket server (Node.js/TypeScript)
-│   └── src/
-├── docker-compose.yml     # Service orchestration
-├── .env.example           # Environment variable template
-├── ARCHITECTURE.md        # System architecture documentation
-└── README.md              # This file
+│       ├── app/(dashboard)/ # 8 pages: devices, audit, content, map, schedules, settings
+│       ├── app/api/         # REST API (devices, fleets, audit, webhooks, mqtt, etc.)
+│       ├── components/      # UI components (charts, toggles, diagnostics)
+│       └── lib/             # Auth, DB schema (21 tables), audit, webhooks, S3
+├── ws-server/               # WebSocket server (Node.js/TypeScript)
+│   └── src/index.ts         # Device/dashboard connections, Redis pub/sub, PostgreSQL writes
+├── nginx/                   # Reverse proxy (HTTP/WSS routing)
+├── mqtt/                    # Mosquitto MQTT broker config
+├── tools/                   # Device simulator
+├── .github/workflows/       # CI pipeline (typecheck + firmware compile)
+├── docker-compose.yml       # 8 services (postgres, redis, minio, mqtt, web, ws, nginx, ngrok)
+├── nodefleet.sh             # Orchestration script (15 commands)
+├── recommendation-report.md # 15-dimension gap analysis scorecard
+└── KNOWN_ISSUES.md          # Issues, fixes, and Monday pending items
 ```
 
 ## Key Features
@@ -148,7 +156,7 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) -- Known issues, gaps, and recommendations
 - [recommendation-report.md](./recommendation-report.md) -- 15-dimension gap analysis scorecard
 
-## API Endpoints (34 routes)
+## API Endpoints (38 routes)
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -156,25 +164,35 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | `/api/devices/pair` | POST | Device pairing (rate limited: 10/hr/IP) |
 | `/api/devices/upload` | POST | Device media upload (presigned URL) |
 | `/api/devices/heartbeat` | POST | HTTP heartbeat fallback |
-| `/api/devices/[id]` | GET/PUT/DELETE | Device CRUD + decommission |
+| `/api/devices/[id]` | GET/PUT/DELETE | Device CRUD + soft decommission |
 | `/api/devices/[id]/command` | GET/POST | Command dispatch + history |
-| `/api/devices/[id]/telemetry` | GET | Telemetry with range filter |
-| `/api/devices/[id]/telemetry/aggregate` | GET | Aggregated min/max/avg |
+| `/api/devices/[id]/telemetry` | GET | Telemetry with range filter (1h/6h/24h/7d/30d) |
+| `/api/devices/[id]/telemetry/aggregate` | GET | Time-bucketed min/max/avg aggregation |
 | `/api/devices/[id]/gps` | GET | GPS history |
 | `/api/devices/[id]/settings` | GET/PUT | Feature toggles + push to device |
-| `/api/devices/[id]/health` | GET | Health score (0-100) |
+| `/api/devices/[id]/health` | GET | Health score (0-100, 5 weighted factors) |
 | `/api/fleets` | GET/POST | Fleet management |
 | `/api/fleets/[id]` | GET/PUT/DELETE | Fleet CRUD |
 | `/api/fleets/[id]/command` | POST | Fleet-wide command broadcast |
-| `/api/audit` | GET | Immutable audit trail viewer |
-| `/api/webhooks` | GET/POST | Webhook CRUD |
-| `/api/mqtt/status` | GET | MQTT broker status |
+| `/api/audit` | GET | Immutable audit trail (filter by range/action/device) |
+| `/api/webhooks` | GET/POST | Webhook CRUD (HMAC-SHA256 signed) |
+| `/api/webhooks/stripe` | POST | Stripe webhook handler |
+| `/api/mqtt/status` | GET | MQTT broker status + config |
 | `/api/schedules` | GET/POST | Schedule management |
+| `/api/schedules/[id]` | GET/PUT/DELETE | Schedule CRUD |
 | `/api/content` | GET | Media library |
+| `/api/content/[id]` | GET/DELETE | Media file operations |
 | `/api/content/upload` | POST | Upload presigned URL |
 | `/api/dashboard/stats` | GET | Dashboard statistics |
+| `/api/discovery` | GET | UDP/mDNS discovery info |
 | `/api/org` | GET/PUT | Organization settings |
-| `/api/auth/[...nextauth]` | ALL | Authentication |
+| `/api/keys` | GET/POST | API key management |
+| `/api/keys/[id]` | DELETE | Revoke API key |
+| `/api/register` | POST | User registration |
+| `/api/auth/[...nextauth]` | ALL | Authentication (NextAuth v5) |
+| `/api/auth/profile` | GET/PUT | User profile |
+| `/api/auth/change-password` | POST | Password change |
+| `/api/auth/delete-account` | POST | Account deletion |
 | `/api/health` | GET | Health check |
 
 ## Orchestration
