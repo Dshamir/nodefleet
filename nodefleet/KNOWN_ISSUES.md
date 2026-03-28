@@ -1,6 +1,6 @@
 # NodeFleet - Known Issues, Gaps & Recommendations
 
-Last updated: 2026-03-28
+Last updated: 2026-03-28 (evening)
 
 ---
 
@@ -42,15 +42,25 @@ Camera I2C/SCCB initialization succeeds (sensor detected, `esp_camera_init()` re
 3. Try compiling with Arduino IDE (which produced working builds on branch-to-merge) instead of PlatformIO to rule out build config differences
 4. Investigate PSRAM: the board has 8MB OPI PSRAM but `psramFound()` returns false. Finding the correct PlatformIO memory_type config (NOT `qio_opi`) may fix both PSRAM and camera capture
 
-### 2. SIM Card Detection Intermittent
+### 2. SIM Card Detection Intermittent — MITIGATED
 
-**Status:** Intermittent
+**Status:** Mitigated (2026-03-28)
 
-`AT+CPIN?` sometimes returns ERROR instead of `+CPIN: READY`. The SIM is physically present and works when the host machine talks to the modem directly via USB (`/dev/ttyACM0`).
+`AT+CPIN?` returns `+CME ERROR` via UART but works via USB (`/dev/ttyACM0`). The SIM is physically present.
 
-**Root cause:** The modem UART (GPIO17/18) initialization timing is tight. The modem needs 3+ seconds after power-on before it responds to AT commands reliably. The 5-retry loop with 2-second delays usually catches it on attempt 2.
+**Fix applied:** SIM check failure is now non-fatal. Modem init continues, GPS and signal monitoring work without SIM. Only cellular data requires SIM. Signal now shows -67 dBm correctly.
 
-**Recommendation:** If SIM detection fails consistently, add a longer delay before the first AT probe, or toggle MODEM_POWER_PIN (GPIO33) to power-cycle the modem.
+**Remaining:** SIM detection still fails via UART — cellular data (as opposed to WiFi) is unavailable until SIM check succeeds.
+
+### 3. GPS GNSS Module Not Responding — Pending Monday
+
+**Status:** Open (2026-03-28 evening)
+
+`AT+CGPSINFO` and `AT+CGPS=1` return ERROR on both UART and USB ports. This started after an `AT+CFUN=1,1` modem reset disconnected the USB. The modem's GNSS subsystem needs a physical power cycle (unplug/replug USB) to recover.
+
+**GPS data in database is from 3/27** when GNSS was working. New GPS records will resume after power cycle.
+
+**Monday action:** Unplug and replug the USB cable to power-cycle the modem.
 
 ---
 

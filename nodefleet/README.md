@@ -129,7 +129,7 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | GPS/GNSS | Working | AT+CGPSINFO, NMEA→decimal, 60s updates, idle mode disables |
 | Heartbeat telemetry | Working | 30s interval → PostgreSQL, recharts visualization |
 | Signal strength | Working | CSQ→dBm conversion (-113 + 2*rssi) |
-| Battery (MAX17048) | Working | I2C fuel gauge (0x36), SOC% in heartbeat |
+| Battery (MAX17048) | Working | I2C fuel gauge (0x36), SOC% clamped 0-100 in heartbeat |
 | Remote commands | Working | 12 commands, fleet broadcast, 5-min timeout, audit trail |
 | OTA firmware update | Working | HTTPUpdate + presigned MinIO URLs |
 | MQTT broker | Running | Mosquitto 2 in docker-compose (port 51883 + WS 59001) |
@@ -142,6 +142,7 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | Camera (OV2640) | Pending Monday | I2C init OK, DVP data path needs DIP switch check |
 | Audio (INMP441) | Pending Monday | Firmware coded, hardware arriving Monday |
 | PSRAM (8MB OPI) | Pending Monday | Need Arduino IDE sdkconfig extraction |
+| GPS/GNSS | Pending Monday | GNSS module needs USB power cycle to recover (AT+CGPSINFO returns ERROR) |
 
 ## Documentation
 
