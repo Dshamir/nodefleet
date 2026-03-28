@@ -18,9 +18,31 @@ Last updated: 2026-03-28
 
 ---
 
-## Open Issues
+## Critical Open Issues
 
-### 1. SIM Card Detection Intermittent
+### 1. Camera Captures Fail — `esp_camera_fb_get()` Returns NULL
+
+**Status:** Open (2026-03-28)
+
+Camera I2C/SCCB initialization succeeds (sensor detected, `esp_camera_init()` returns `ESP_OK`), but `esp_camera_fb_get()` returns NULL when attempting to capture a JPEG frame. This happens at both VGA and QVGA resolution in DRAM mode.
+
+**What works:** Camera sensor responds on I2C. `esp_camera_init()` completes without error. Command pipeline delivers `capture_photo` to the device. Device attempts capture and sends ack.
+
+**What fails:** No pixel data is produced by the camera. The DVP data path (XCLK → camera → PCLK/VSYNC/HREF/D0-D7 → ESP32) is not active.
+
+**Root cause candidates:**
+- DIP switch on the back of the board not fully configured (CAM switch ON, but HUB or other switches may need specific positions)
+- Camera ribbon cable data pins not making contact (I2C uses only 2 pins; DVP uses 14 pins — partial contact possible)
+- XCLK signal not reaching the camera (GPIO39 may need specific mux configuration)
+- PSRAM not available — camera may require PSRAM for frame buffer allocation even at QVGA
+
+**Recommendation:**
+1. Check ALL DIP switch positions on the back of the board
+2. Reseat the camera ribbon cable firmly
+3. Try compiling with Arduino IDE (which produced working builds on branch-to-merge) instead of PlatformIO to rule out build config differences
+4. Investigate PSRAM: the board has 8MB OPI PSRAM but `psramFound()` returns false. Finding the correct PlatformIO memory_type config (NOT `qio_opi`) may fix both PSRAM and camera capture
+
+### 2. SIM Card Detection Intermittent
 
 **Status:** Intermittent
 
@@ -42,28 +64,30 @@ The ws-server received heartbeat and GPS data via WebSocket but only published t
 
 **Fix:** Added `pg` dependency to ws-server. Heartbeat and GPS handlers now INSERT directly into the database.
 
-### 2. Command Pipeline Incomplete
+### 2. Command Pipeline — FIXED
 
-**Status:** Partially fixed
+**Status:** Fixed (2026-03-28)
 
-- Commands created via REST API are stored in a Redis list (`device:{id}:commands`).
-- The ws-server drains this queue when a device connects.
-- Command acks from the device update the database via the ws-server.
-- **Gap:** The Redis queue drain on connect is not reliably triggering. Commands sent while the device is connected work via the dashboard WebSocket `send_command` path, but queued commands may not be delivered.
+- Commands created via REST API → Redis list → ws-server drains on every heartbeat (30s) → sends to device via WebSocket → device acks → ws-server updates DB status
+- Status mapping: device `success` → DB `completed`, device `error` → DB `failed`
+- **Fix applied:** Queue drain now runs on every heartbeat (not just device connect), and the `readyState` check that was blocking drain for connected devices was removed
 
-**Recommendation:** Add a periodic command queue poll (every 30s) in the ws-server's heartbeat handler, or switch to Redis pub/sub for immediate command delivery.
+### 3. Photo Upload Pipeline — Partially Working
 
-### 3. Photo Upload Pipeline Needs End-to-End Testing
+**Status:** Upload endpoint and presigned URLs work. Camera capture fails (see Critical Issue #1).
 
-**Status:** Camera working, upload pipeline coded
+The full pipeline is coded and partially tested:
+1. Dashboard sends `capture_photo` command → delivered to device via Redis queue drain
+2. Device calls `esp_camera_fb_get()` — **currently returns NULL** (camera DVP data path issue)
+3. Device requests presigned upload URL from `POST /api/devices/upload` (device-token authenticated)
+4. Presigned URL is rewritten from internal `http://minio:9000` to public `http://192.168.0.19:50900` via `S3_PUBLIC_ENDPOINT` env var
+5. Device PUTs JPEG to MinIO via presigned URL
+6. Device sends `media_ready` WebSocket notification
+7. Media file record created in `media_files` table
 
-The full pipeline exists and camera init is verified working:
-1. Device captures JPEG via `esp_camera_fb_get()` (SVGA in DRAM mode)
-2. Device requests presigned upload URL from `/api/devices/upload`
-3. Device PUTs the JPEG to MinIO via the presigned URL
-4. Device sends `media_ready` WebSocket message
+**What has been verified working:** Steps 1, 3, 4, 7 (command delivery, upload URL generation, DB record creation). Steps 2, 5, 6 blocked by camera capture failure.
 
-**Potential issues:** Presigned URL expiry, MinIO CORS config, large JPEG uploads from ESP32 (SVGA ~30-80KB), HTTP client memory pressure on ESP32 during upload.
+**MinIO bucket:** `nodefleet-media` was missing and has been manually created. The `minio-init` container should create it automatically on fresh deployments.
 
 ### 4. Battery Monitoring Not Working
 
@@ -127,6 +151,10 @@ Device JWT tokens are issued for 365 days and never rotated. If a token is compr
 | WebSocketServer `handleUpgrade` called twice | Changed to `noServer: true` mode |
 | Telemetry/GPS not persisted to database | Added PostgreSQL writes in ws-server heartbeat/GPS handlers |
 | Stale pending commands | Marked old commands as "failed", added command ack DB updates |
+| Command queue not draining for connected devices | Added drain on every heartbeat + removed readyState block |
+| Command ack status `success` rejected by DB enum | Added mapping: `success`→`completed`, `error`→`failed` |
+| MinIO presigned URL unreachable from ESP32 (internal Docker hostname) | Added `S3_PUBLIC_ENDPOINT` env var, URL rewrite in `/api/devices/upload` |
+| MinIO bucket `nodefleet-media` missing | Manually created; `minio-init` container should auto-create |
 | ModemManager grabbing modem serial ports | Stopped and disabled ModemManager systemd service |
 
 ---

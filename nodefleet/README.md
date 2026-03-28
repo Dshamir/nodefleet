@@ -117,16 +117,16 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | Feature | Status | Notes |
 |---------|--------|-------|
 | WiFi + WebSocket | Working | Auto-reconnect with exponential backoff |
-| LTE Cat-1 (SIM7670G) | Working | GPIO17/18 UART, AT+CEREG for LTE registration |
-| GPS/GNSS | Working | AT+CGPSINFO, NMEA to decimal degree conversion, 60s updates |
-| Camera (OV2640) | Working | Pins: VSYNC=42, HREF=41, PCLK=46, XCLK=39. DRAM mode (no PSRAM flag) |
-| Heartbeat telemetry | Working | 30s interval, persisted to PostgreSQL |
-| Signal strength | Working | CSQ to dBm conversion (-113 + 2*rssi) |
-| Remote commands | Working | Command queue drain + ack pipeline |
-| Photo capture + upload | Working | Presigned URL upload to MinIO via `/api/devices/upload` |
-| Battery monitoring | Not working | GPIO0 invalid on ESP32-S3; use AT+CBC or MAX17048 I2C fuel gauge |
+| LTE Cat-1 (SIM7670G) | Working | GPIO17/18 UART, 5-retry init, AT+CEREG for LTE |
+| GPS/GNSS | Working | AT+CGPSINFO, NMEA→decimal conversion, 60s updates |
+| Heartbeat telemetry | Working | 30s interval → PostgreSQL via ws-server |
+| Signal strength | Working | CSQ→dBm conversion (-113 + 2*rssi) |
+| Remote commands | Working | REST API → Redis queue → ws-server → device → ack → DB |
+| Camera (OV2640) | Init OK, capture fails | I2C/SCCB init succeeds but `esp_camera_fb_get()` returns NULL. DVP data path issue — DIP switch or ribbon cable data pins. See [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) |
+| Photo upload pipeline | Coded + tested | Presigned URL upload to MinIO via `/api/devices/upload`. Works when camera captures succeed |
+| Battery monitoring | Not working | GPIO0 invalid on ESP32-S3. Board has MAX17048 I2C fuel gauge (0x36) — not yet integrated |
 | Audio recording | Not implemented | Requires external I2S MEMS microphone (INMP441) |
-| OTA firmware update | Not implemented | Stub exists, needs httpUpdate integration |
+| OTA firmware update | Not implemented | Command handler stub exists, needs httpUpdate |
 
 ## Documentation
 

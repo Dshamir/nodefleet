@@ -118,7 +118,7 @@ Edit `config.h` to customize:
 #define PAIRING_CODE      "XXXXXX"
 
 // Features
-#define ENABLE_CAMERA     1   // OV2640 verified working (DIP switch CAM must be ON)
+#define ENABLE_CAMERA     1   // OV2640 — init works, capture blocked by DVP data path issue
 #define ENABLE_GPS        1
 #define ENABLE_SD_CARD    0   // Pins conflict with camera
 #define ENABLE_WATCHDOG   1

@@ -27,11 +27,14 @@ This document lists ESP32-based development boards with camera, GPS, and cellula
 
 **Package contents:** Board, acrylic case, GNSS ceramic antenna, OV2640 camera, FPC antenna, pin headers, USB cable, screwdriver, double-sided tape.
 
-**Verified firmware features:** WiFi, WebSocket, LTE registration, GPS (AT+CGPSINFO), camera (OV2640 SVGA JPEG), heartbeat telemetry, remote commands, photo capture + upload, NVS token persistence.
+**Verified firmware features:** WiFi, WebSocket, LTE registration, GPS (AT+CGPSINFO), heartbeat telemetry (→ PostgreSQL), remote commands (REST → Redis → WebSocket → device → ack → DB), NVS token persistence.
+
+**Camera status:** I2C/SCCB init succeeds, but `esp_camera_fb_get()` returns NULL. DVP data path not producing frames. Upload pipeline is coded and the presigned URL flow works — blocked only by capture.
 
 **Known issues on this board:**
-- `board_build.arduino.memory_type = qio_opi` in PlatformIO crashes the board -- must use default memory config
-- PSRAM not detected with default config (camera runs in DRAM mode, SVGA resolution)
+- `board_build.arduino.memory_type = qio_opi` in PlatformIO crashes the board — must use default memory config
+- PSRAM not detected with default config (`psramFound()` returns false). Camera runs in DRAM/QVGA mode
+- Camera frame capture fails even though init succeeds — likely DIP switch configuration or ribbon cable data pin contact issue
 - Modem UART pins are GPIO17 (RX) / GPIO18 (TX), NOT GPIO8/9 as commonly documented
 - Modem power pin is GPIO33
 - Camera and SPI SD card pins conflict (GPIO10-13) -- use SDMMC mode (pins 4/5/6) for SD
