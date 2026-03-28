@@ -131,9 +131,10 @@ bool WebSocketClient::sendHeartbeat(float battery_voltage, int signal_strength, 
     doc["type"] = "heartbeat";
     doc["battery"] = battery_voltage;
     doc["signal"] = signal_strength;
-    doc["cpuTemp"] = temperatureRead();  // ESP32 internal temp sensor
+    doc["cpuTemp"] = temperatureRead();
     doc["freeMemory"] = free_heap;
-    doc["uptime"] = uptime_ms / 1000;  // Server expects seconds
+    doc["uptime"] = uptime_ms / 1000;
+    doc["firmware_version"] = FIRMWARE_VERSION;
 
     return sendCustomMessage(doc);
 }

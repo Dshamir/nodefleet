@@ -21,6 +21,7 @@
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
+#include <HTTPUpdate.h>
 
 // ============================================================================
 // Global Objects
@@ -488,13 +489,94 @@ void handleIncomingCommand(const JsonDocument& cmd) {
             String value = cmd["value"].as<String>();
             storage.nvs_saveConfig(key, value);
             success = true;
+            message = "Config saved: " + key + "=" + value;
         } else {
             message = "Invalid config parameters";
             success = false;
         }
     }
+    else if (command == "read_config") {
+        if (cmd.containsKey("key")) {
+            String key = cmd["key"].as<String>();
+            String value;
+            if (storage.nvs_loadConfig(key, value)) {
+                success = true;
+                message = key + "=" + value;
+            } else {
+                success = false;
+                message = "Key not found: " + key;
+            }
+        } else {
+            message = "Missing key parameter";
+            success = false;
+        }
+    }
+    else if (command == "factory_reset") {
+        LOG_INFO("Executing: factory_reset");
+        message = "Factory reset initiated...";
+        success = true;
+        ws_client.sendCommandAck(command_id, success, message);
+        delay(500);
+        storage.nvs_clear();
+        delay(500);
+        ESP.restart();
+    }
+    else if (command == "set_heartbeat_interval") {
+        if (cmd.containsKey("interval_ms")) {
+            uint32_t interval = cmd["interval_ms"].as<uint32_t>();
+            if (interval >= 5000 && interval <= 300000) {
+                storage.nvs_saveConfig("hb_interval", String(interval));
+                success = true;
+                message = "Heartbeat interval set to " + String(interval) + "ms (effective after reboot)";
+            } else {
+                success = false;
+                message = "Interval must be 5000-300000ms";
+            }
+        } else {
+            success = false;
+            message = "Missing interval_ms parameter";
+        }
+    }
+    else if (command == "power_mode") {
+        if (cmd.containsKey("mode")) {
+            String mode = cmd["mode"].as<String>();
+            if (mode == "active") {
+                success = true;
+                message = "Power mode: active (all systems on)";
+            } else if (mode == "idle") {
+                // Disable GPS and camera, keep WiFi/LTE
+                success = true;
+                message = "Power mode: idle (GPS/camera off)";
+            } else if (mode == "sleep") {
+                message = "Entering light sleep...";
+                success = true;
+                ws_client.sendCommandAck(command_id, success, message);
+                delay(500);
+                esp_sleep_enable_timer_wakeup(60 * 1000000ULL); // 60s
+                esp_light_sleep_start();
+                return; // Resume after wakeup
+            } else {
+                success = false;
+                message = "Unknown mode. Use: active, idle, sleep";
+            }
+        } else {
+            success = false;
+            message = "Missing mode parameter";
+        }
+    }
+    else if (command == "get_network_info") {
+        if (device_state.modem_connected) {
+            String op_name, rat;
+            modem.getNetworkInfo(op_name, rat);
+            success = true;
+            message = "Operator: " + op_name + ", RAT: " + rat;
+        } else {
+            success = false;
+            message = "Modem not connected";
+        }
+    }
     else {
-        message = "Unknown command";
+        message = "Unknown command: " + command;
         success = false;
     }
 
@@ -638,10 +720,26 @@ void recordAndUploadAudio() {
 void updateFirmware(const String& url) {
     LOG_INFO("Starting firmware update from: %s", url.c_str());
 
-    // TODO: Implement OTA update using httpUpdate library
-    // This requires proper error handling and rollback support
+    WiFiClient client;
+    HTTPUpdate httpUpdate;
 
-    LOG_WARN("Firmware update not yet implemented");
+    httpUpdate.setLedPin(-1);  // No LED during update
+    httpUpdate.rebootOnUpdate(true);
+
+    LOG_INFO("Downloading firmware...");
+    t_httpUpdate_return ret = httpUpdate.update(client, url);
+
+    switch (ret) {
+        case HTTP_UPDATE_FAILED:
+            LOG_ERROR("OTA failed: %s", httpUpdate.getLastErrorString().c_str());
+            break;
+        case HTTP_UPDATE_NO_UPDATES:
+            LOG_INFO("No updates available");
+            break;
+        case HTTP_UPDATE_OK:
+            LOG_INFO("OTA success, rebooting...");
+            break;
+    }
 }
 
 // ============================================================================

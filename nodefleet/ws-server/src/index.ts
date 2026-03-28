@@ -480,6 +480,22 @@ class NodeFleetWSServer {
       this.logger.error('Command queue drain failed', err)
     );
 
+    // Timeout stale commands (pending/sent > 5 minutes)
+    this.db.query(
+      `UPDATE device_commands SET status = 'timeout', completed_at = NOW()
+       WHERE device_id = $1 AND status IN ('pending', 'sent')
+       AND created_at < NOW() - INTERVAL '5 minutes'`,
+      [deviceId]
+    ).catch(err => this.logger.error('Command timeout update failed', err));
+
+    // Update firmware version from heartbeat
+    if ((message as Record<string, unknown>).firmware_version) {
+      this.db.query(
+        `UPDATE devices SET firmware_version = $2 WHERE id = $1 AND (firmware_version IS NULL OR firmware_version != $2)`,
+        [deviceId, (message as Record<string, unknown>).firmware_version]
+      ).catch(() => {});
+    }
+
     this.logger.debug(`Heartbeat from ${deviceId}`, heartbeatData);
   }
 
