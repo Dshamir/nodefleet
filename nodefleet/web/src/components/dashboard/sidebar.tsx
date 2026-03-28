@@ -12,6 +12,7 @@ import {
   LogOut,
   Menu,
   X,
+  Shield,
 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ const navItems = [
   { label: "Content Library", href: "/content", icon: FileText },
   { label: "Schedules", href: "/schedules", icon: Clock },
   { label: "Map", href: "/map", icon: Map },
+  { label: "Audit Trail", href: "/audit", icon: Shield },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

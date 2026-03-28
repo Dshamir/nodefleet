@@ -24,6 +24,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { DeviceStatusBadge } from "@/components/dashboard/device-status-badge";
+import { TelemetryCharts } from "@/components/dashboard/device/telemetry-charts";
+import { FeatureToggles } from "@/components/dashboard/device/feature-toggles";
+import { DiagnosticsPanel } from "@/components/dashboard/device/diagnostics-panel";
 import {
   ArrowLeft,
   Send,
@@ -32,6 +35,11 @@ import {
   Signal,
   Thermometer,
   Cpu,
+  RotateCcw,
+  Power,
+  Settings2,
+  Activity,
+  AlertTriangle,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -417,6 +425,8 @@ export default function DeviceDetailPage() {
           <TabsTrigger value="telemetry">Telemetry</TabsTrigger>
           <TabsTrigger value="gps">GPS</TabsTrigger>
           <TabsTrigger value="commands">Commands</TabsTrigger>
+          <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
+          <TabsTrigger value="settings">Settings</TabsTrigger>
         </TabsList>
 
         {/* ---- Overview Tab ---- */}
@@ -476,10 +486,14 @@ export default function DeviceDetailPage() {
         </TabsContent>
 
         {/* ---- Telemetry Tab ---- */}
+        {/* Charts are rendered above the table */}
         <TabsContent value="telemetry" className="space-y-6 mt-6">
+          {/* Telemetry Charts */}
+          <TelemetryCharts deviceId={deviceId} />
+
           <Card className="bg-slate-900/50 border-slate-800">
             <CardHeader>
-              <CardTitle>Telemetry History</CardTitle>
+              <CardTitle>Telemetry History (Raw)</CardTitle>
             </CardHeader>
             <CardContent>
               {telemetry.length === 0 ? (
@@ -703,6 +717,20 @@ export default function DeviceDetailPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ── Diagnostics Tab ── */}
+        <TabsContent value="diagnostics" className="space-y-6 mt-6">
+          <DiagnosticsPanel
+            deviceId={deviceId}
+            device={device}
+            latestTelemetry={telemetry.length > 0 ? telemetry[0] : null}
+          />
+        </TabsContent>
+
+        {/* ── Settings Tab ── */}
+        <TabsContent value="settings" className="space-y-6 mt-6">
+          <FeatureToggles deviceId={deviceId} />
         </TabsContent>
       </Tabs>
     </div>
