@@ -28,6 +28,8 @@ interface DashboardMessage {
 interface DeviceInfo {
   ws: WebSocket.WebSocket;
   deviceId: string;
+  orgId?: string;
+  tokenIat?: number;
   lastHeartbeat: number;
   heartbeatTimer: NodeJS.Timeout | null;
 }
@@ -256,15 +258,62 @@ class NodeFleetWSServer {
   // AUTHENTICATION
   // ============================================================================
 
-  private verifyDeviceToken(token: string): { deviceId: string } {
+  private verifyDeviceToken(token: string): { deviceId: string; orgId?: string; iat?: number } {
     try {
-      const decoded = jwt.verify(token, this.DEVICE_TOKEN_SECRET) as { deviceId: string };
+      const decoded = jwt.verify(token, this.DEVICE_TOKEN_SECRET) as {
+        deviceId: string; orgId?: string; tokenId?: string; type?: string; iat?: number;
+      };
       if (!decoded.deviceId) {
         throw new Error('Invalid device token: missing deviceId');
       }
       return decoded;
     } catch (error) {
       throw new Error(`Device token verification failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  private async rotateTokenIfNeeded(deviceId: string, orgId: string | undefined, iat: number | undefined): Promise<void> {
+    if (!iat || !orgId) return;
+
+    // Rotate token if older than 30 days
+    const tokenAge = Date.now() / 1000 - iat;
+    const thirtyDays = 30 * 24 * 60 * 60;
+
+    if (tokenAge < thirtyDays) return;
+
+    this.logger.info(`Token rotation triggered for device ${deviceId} (age: ${Math.round(tokenAge / 86400)} days)`);
+
+    try {
+      // Issue new token
+      const newToken = jwt.sign(
+        { deviceId, orgId, type: 'device' },
+        this.DEVICE_TOKEN_SECRET,
+        { expiresIn: '365d' }
+      );
+
+      // Store in DB
+      await this.db.query(
+        `INSERT INTO device_tokens (device_id, token, issued_at, expires_at) VALUES ($1, $2, NOW(), NOW() + INTERVAL '365 days')`,
+        [deviceId, newToken.slice(-64)]
+      );
+
+      // Send new token to device via WebSocket
+      const device = this.devices.get(deviceId);
+      if (device && device.ws.readyState === 1) {
+        device.ws.send(JSON.stringify({
+          type: 'token_refresh',
+          token: newToken,
+        }));
+        this.logger.info(`New token sent to device ${deviceId}`);
+      }
+
+      // Audit log
+      await this.db.query(
+        `INSERT INTO audit_logs (device_id, action, details, created_at) VALUES ($1, 'config_changed', $2, NOW())`,
+        [deviceId, JSON.stringify({ event: 'token_rotated', tokenAge: Math.round(tokenAge / 86400) })]
+      );
+    } catch (err) {
+      this.logger.error(`Token rotation failed for ${deviceId}`, err);
     }
   }
 
@@ -300,6 +349,8 @@ class NodeFleetWSServer {
       const deviceInfo: DeviceInfo = {
         ws,
         deviceId,
+        orgId: decoded.orgId,
+        tokenIat: decoded.iat,
         lastHeartbeat: Date.now(),
         heartbeatTimer: null,
       };
@@ -493,6 +544,12 @@ class NodeFleetWSServer {
        AND created_at < NOW() - INTERVAL '5 minutes'`,
       [deviceId]
     ).catch(err => this.logger.error('Command timeout update failed', err));
+
+    // Token rotation check (every heartbeat, only rotates if > 30 days old)
+    const deviceInfo = this.devices.get(deviceId);
+    if (deviceInfo?.orgId && deviceInfo?.tokenIat) {
+      this.rotateTokenIfNeeded(deviceId, deviceInfo.orgId, deviceInfo.tokenIat).catch(() => {});
+    }
 
     // Update firmware version from heartbeat
     if ((message as Record<string, unknown>).firmware_version) {

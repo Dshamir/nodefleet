@@ -17,6 +17,7 @@
 #include "camera.h"
 #include "storage.h"
 #include "websocket_client.h"
+#include "battery.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
@@ -31,6 +32,7 @@ SIM7670GModem modem(MODEM_RX_PIN, MODEM_TX_PIN, MODEM_BAUD);
 CameraModule camera;
 StorageManager storage;
 WebSocketClient ws_client(SERVER_HOST, SERVER_PORT, DEVICE_WS_URL);
+BatteryGauge battery_gauge(CAMERA_SIOD, CAMERA_SIOC);  // Shared I2C bus (GPIO15/16)
 
 // ============================================================================
 // Global State
@@ -159,6 +161,13 @@ void setup() {
         }
     }
 
+    // Initialize battery fuel gauge (MAX17048 on shared I2C bus)
+    if (battery_gauge.begin()) {
+        float voltage = battery_gauge.readVoltage();
+        float soc = battery_gauge.readSOC();
+        LOG_INFO("Battery: %.2fV, %.1f%%", voltage, soc);
+    }
+
     // Initialize WiFi
     if (USE_WIFI) {
         initializeWiFi();
@@ -211,8 +220,12 @@ void loop() {
     // Update connection states
     device_state.wifi_connected = WiFi.status() == WL_CONNECTED;
 
-    // Update battery voltage
-    updateBatteryVoltage();
+    // Update battery (MAX17048 fuel gauge or ADC fallback)
+    if (battery_gauge.isConnected()) {
+        device_state.battery_voltage = battery_gauge.readSOC();  // 0-100%
+    } else {
+        updateBatteryVoltage();  // ADC fallback
+    }
 
     // Update signal strength (convert CSQ to dBm: dBm = -113 + 2*rssi)
     if (device_state.modem_connected) {
@@ -413,6 +426,17 @@ void pairDevice() {
 // ============================================================================
 
 void handleIncomingCommand(const JsonDocument& cmd) {
+    // Handle token refresh (server rotates JWT every 30 days)
+    if (cmd.containsKey("type") && cmd["type"].as<String>() == "token_refresh") {
+        if (cmd.containsKey("token")) {
+            String new_token = cmd["token"].as<String>();
+            device_state.device_token = new_token;
+            storage.nvs_saveDeviceToken(new_token);
+            LOG_INFO("Token rotated and saved to NVS");
+        }
+        return;
+    }
+
     if (!cmd.containsKey("command")) {
         LOG_ERROR("Invalid command format");
         return;

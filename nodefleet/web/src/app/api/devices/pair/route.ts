@@ -5,13 +5,43 @@ import { devices, deviceTokens } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
+import { logAudit } from "@/lib/audit";
 
 const pairSchema = z.object({
   pairingCode: z.string().min(1).max(10),
 });
 
+// Simple in-memory rate limiter (10 attempts per IP per hour)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + 3600000 });
+    return true;
+  }
+
+  if (entry.count >= 10) {
+    return false;
+  }
+
+  entry.count++;
+  return true;
+}
+
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting
+    const ip = request.headers.get("x-forwarded-for") || request.headers.get("x-real-ip") || "unknown";
+    if (!checkRateLimit(ip)) {
+      return NextResponse.json(
+        { error: "Too many pairing attempts. Try again in 1 hour." },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const { pairingCode } = pairSchema.parse(body);
 
@@ -73,6 +103,15 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date(),
       })
       .where(eq(devices.id, device.id));
+
+    // Audit trail
+    await logAudit({
+      orgId: device.orgId,
+      deviceId: device.id,
+      action: "device_paired",
+      details: { pairingCode, deviceModel: body.device_model },
+      ipAddress: ip,
+    });
 
     return NextResponse.json({
       success: true,
