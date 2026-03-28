@@ -116,17 +116,24 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| WiFi + WebSocket | Working | Auto-reconnect with exponential backoff |
+| WiFi + WebSocket | Working | Auto-reconnect, exponential backoff, JWT token rotation (30-day) |
 | LTE Cat-1 (SIM7670G) | Working | GPIO17/18 UART, 5-retry init, AT+CEREG for LTE |
-| GPS/GNSS | Working | AT+CGPSINFO, NMEA→decimal conversion, 60s updates |
-| Heartbeat telemetry | Working | 30s interval → PostgreSQL via ws-server |
+| GPS/GNSS | Working | AT+CGPSINFO, NMEA→decimal, 60s updates, idle mode disables |
+| Heartbeat telemetry | Working | 30s interval → PostgreSQL, recharts visualization |
 | Signal strength | Working | CSQ→dBm conversion (-113 + 2*rssi) |
-| Remote commands | Working | REST API → Redis queue → ws-server → device → ack → DB |
-| Camera (OV2640) | Init OK, capture fails | I2C/SCCB init succeeds but `esp_camera_fb_get()` returns NULL. DVP data path issue — DIP switch or ribbon cable data pins. See [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) |
-| Photo upload pipeline | Coded + tested | Presigned URL upload to MinIO via `/api/devices/upload`. Works when camera captures succeed |
-| Battery monitoring | Not working | GPIO0 invalid on ESP32-S3. Board has MAX17048 I2C fuel gauge (0x36) — not yet integrated |
-| Audio recording | Not implemented | Requires external I2S MEMS microphone (INMP441) |
-| OTA firmware update | Not implemented | Command handler stub exists, needs httpUpdate |
+| Battery (MAX17048) | Working | I2C fuel gauge (0x36), SOC% in heartbeat |
+| Remote commands | Working | 12 commands, fleet broadcast, 5-min timeout, audit trail |
+| OTA firmware update | Working | HTTPUpdate + presigned MinIO URLs |
+| MQTT broker | Running | Mosquitto 2 in docker-compose (port 51883 + WS 59001) |
+| Webhooks | Working | HMAC-SHA256 signed, 5 event types, CRUD API |
+| Audit trail | Working | Immutable log, 19 event types, filterable viewer |
+| Device diagnostics | Working | Health scoring (0-100), gauges, error log, recommendations |
+| Feature toggles | Working | Camera/audio/GPS/LTE/MQTT on/off per device |
+| Power management | Working | Active/idle/sleep/deep_sleep modes |
+| Telemetry aggregation | Working | date_trunc + GROUP BY, configurable range/interval |
+| Camera (OV2640) | Pending Monday | I2C init OK, DVP data path needs DIP switch check |
+| Audio (INMP441) | Pending Monday | Firmware coded, hardware arriving Monday |
+| PSRAM (8MB OPI) | Pending Monday | Need Arduino IDE sdkconfig extraction |
 
 ## Documentation
 
@@ -139,6 +146,55 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 - [firmware/esp32_agent/README.md](./firmware/esp32_agent/README.md) -- ESP32 firmware setup and flashing
 - [HARDWARE_ALTERNATIVES.md](./HARDWARE_ALTERNATIVES.md) -- Compatible boards and buying guide
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) -- Known issues, gaps, and recommendations
+- [recommendation-report.md](./recommendation-report.md) -- 15-dimension gap analysis scorecard
+
+## API Endpoints (34 routes)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/devices` | GET/POST | Device list + create |
+| `/api/devices/pair` | POST | Device pairing (rate limited: 10/hr/IP) |
+| `/api/devices/upload` | POST | Device media upload (presigned URL) |
+| `/api/devices/heartbeat` | POST | HTTP heartbeat fallback |
+| `/api/devices/[id]` | GET/PUT/DELETE | Device CRUD + decommission |
+| `/api/devices/[id]/command` | GET/POST | Command dispatch + history |
+| `/api/devices/[id]/telemetry` | GET | Telemetry with range filter |
+| `/api/devices/[id]/telemetry/aggregate` | GET | Aggregated min/max/avg |
+| `/api/devices/[id]/gps` | GET | GPS history |
+| `/api/devices/[id]/settings` | GET/PUT | Feature toggles + push to device |
+| `/api/devices/[id]/health` | GET | Health score (0-100) |
+| `/api/fleets` | GET/POST | Fleet management |
+| `/api/fleets/[id]` | GET/PUT/DELETE | Fleet CRUD |
+| `/api/fleets/[id]/command` | POST | Fleet-wide command broadcast |
+| `/api/audit` | GET | Immutable audit trail viewer |
+| `/api/webhooks` | GET/POST | Webhook CRUD |
+| `/api/mqtt/status` | GET | MQTT broker status |
+| `/api/schedules` | GET/POST | Schedule management |
+| `/api/content` | GET | Media library |
+| `/api/content/upload` | POST | Upload presigned URL |
+| `/api/dashboard/stats` | GET | Dashboard statistics |
+| `/api/org` | GET/PUT | Organization settings |
+| `/api/auth/[...nextauth]` | ALL | Authentication |
+| `/api/health` | GET | Health check |
+
+## Orchestration
+
+All services managed via `./nodefleet.sh`:
+
+```bash
+./nodefleet.sh                  # Full build + start + 9-stage health check
+./nodefleet.sh --status         # Show all 8 services + URLs
+./nodefleet.sh health           # Probe all endpoints
+./nodefleet.sh rebuild web      # Hot-rebuild specific service
+./nodefleet.sh migrate          # Create/verify all DB tables (idempotent)
+./nodefleet.sh simulate --pair CODE  # Device simulator (no hardware)
+./nodefleet.sh compile          # Compile firmware only
+./nodefleet.sh flash            # Compile + flash ESP32
+./nodefleet.sh mqtt             # MQTT broker status + test
+./nodefleet.sh db "SQL"         # Run SQL query
+./nodefleet.sh logs ws-server   # Tail service logs
+./nodefleet.sh down             # Stop all (volumes preserved)
+```
 
 ## License
 

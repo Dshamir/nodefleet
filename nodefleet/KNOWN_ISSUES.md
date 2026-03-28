@@ -107,37 +107,47 @@ The board has 8MB OPI PSRAM but `psramFound()` returns false with the current Pl
 
 **Recommendation:** Investigate the correct `memory_type` for this board variant (ESP32-S3R8). Options to try: `opi_opi`, `qio_qspi`, or compile via Arduino IDE with "PSRAM: OPI PSRAM" to capture the correct sdkconfig.
 
-### 5. OTA Firmware Update Not Implemented
+### 5. OTA Firmware Update — RESOLVED
 
-**Status:** TODO
+**Status:** Implemented (2026-03-28)
 
-The `update_firmware` command handler exists but the actual OTA implementation is a stub. No `httpUpdate` or ESP-IDF OTA logic.
+**Fix:** `HTTPUpdate` library integrated in `updateFirmware()`. Device downloads `.bin` from presigned MinIO URL and applies OTA. GitHub Actions CI pipeline compiles firmware on every push.
 
-**Recommendation:** Use `esp_https_ota()` or the Arduino `HTTPUpdate` library. Store firmware binaries in MinIO and generate presigned download URLs.
+### 6. Audio Recording — Pending Monday
 
-### 6. Audio Recording Not Implemented
+**Status:** Firmware coded, hardware arriving Monday
 
-**Status:** TODO
+I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL upload to MinIO. INMP441 MEMS microphone pins configured (BCK=GPIO2, WS=GPIO3, DIN=GPIO1). Set `ENABLE_AUDIO 1` after connecting mic.
 
-The `record_audio` command handler exists but returns "Audio not enabled". No I2S microphone hardware is connected, and no I2S recording code exists.
+### 7. Telemetry Retention — RESOLVED
 
-**Recommendation:** Connect an INMP441 I2S MEMS microphone. The ESP32-S3 supports PDM and I2S audio input natively.
+**Status:** Implemented (2026-03-28)
 
-### 7. No Telemetry History Retention Policy
+**Fix:** 90-day auto-cleanup on ws-server startup. Aggregation endpoint added (`/api/devices/[id]/telemetry/aggregate`) with PostgreSQL `date_trunc + GROUP BY`.
 
-**Status:** Gap
+### 8. Device Token Rotation — RESOLVED
 
-Telemetry records accumulate indefinitely in PostgreSQL. No archival, aggregation, or TTL policy.
+**Status:** Implemented (2026-03-28)
 
-**Recommendation:** Add a cron job or PostgreSQL partition-based TTL to archive or delete records older than 90 days. Consider TimescaleDB for time-series optimization.
+**Fix:** ws-server checks token age on every heartbeat. Tokens older than 30 days are automatically rotated: new JWT issued, sent to device via `token_refresh` WebSocket message, device saves to NVS. Audit trail logs rotation events.
 
-### 8. Device Token Rotation
+### 9. Rate Limiting — RESOLVED
 
-**Status:** Gap
+**Status:** Implemented (2026-03-28)
 
-Device JWT tokens are issued for 365 days and never rotated. If a token is compromised, it remains valid for a year.
+**Fix:** In-memory rate limiter on `/api/devices/pair` endpoint. 10 attempts per IP per hour. Returns 429 when exceeded.
 
-**Recommendation:** Implement token refresh on heartbeat (issue new token every 30 days, revoke old one).
+### 10. Webhook System — RESOLVED
+
+**Status:** Implemented (2026-03-28)
+
+**Fix:** `webhooks` table with HMAC-SHA256 signed payloads. CRUD API at `/api/webhooks`. Events: device_online/offline, command_completed, alert_triggered, low_battery.
+
+### 11. Device Lifecycle — RESOLVED
+
+**Status:** Implemented (2026-03-28)
+
+**Fix:** Decommission API (DELETE `/api/devices/[id]` → status='disabled', revoke tokens, audit log). Health scoring API (GET `/api/devices/[id]/health` → 0-100 weighted score). Fleet-wide command broadcast (POST `/api/fleets/[id]/command`).
 
 ---
 
@@ -156,6 +166,17 @@ Device JWT tokens are issued for 365 days and never rotated. If a token is compr
 | MinIO presigned URL unreachable from ESP32 (internal Docker hostname) | Added `S3_PUBLIC_ENDPOINT` env var, URL rewrite in `/api/devices/upload` |
 | MinIO bucket `nodefleet-media` missing | Manually created; `minio-init` container should auto-create |
 | ModemManager grabbing modem serial ports | Stopped and disabled ModemManager systemd service |
+| No telemetry retention | 90-day auto-cleanup on ws-server startup |
+| No telemetry aggregation | PostgreSQL date_trunc + GROUP BY endpoint |
+| No token rotation | 30-day auto-refresh via WebSocket `token_refresh` message |
+| No rate limiting on pairing | In-memory rate limiter (10/hr/IP) with 429 response |
+| No webhook system | webhooks table + HMAC-SHA256 signed HTTP POST delivery |
+| No fleet-wide commands | POST `/api/fleets/[id]/command` broadcasts to all devices |
+| No device health scoring | GET `/api/devices/[id]/health` with 5-factor weighted score |
+| No device decommission | DELETE soft-disables + revokes tokens + audit log |
+| No audit trail | `audit_logs` table with 19 event types, filterable viewer at /audit |
+| No MQTT broker | Eclipse Mosquitto 2 added to docker-compose (port 51883) |
+| No CI pipeline | GitHub Actions: web typecheck + ws-server typecheck + firmware compile |
 
 ---
 
@@ -175,3 +196,10 @@ Device JWT tokens are issued for 365 days and never rotated. If a token is compr
 | Signal strength reported as raw CSQ (0-31) | Added dBm conversion (`-113 + 2*rssi`) |
 | Camera crash (WDT reset) on `esp_camera_init()` | Root cause: `qio_opi` memory type in platformio.ini. Fix: remove the setting, use board defaults |
 | Camera pins wrong (GPIO34/35/36/37) | Corrected to VSYNC=42, HREF=41, PCLK=46, XCLK=39 (from branch-to-merge) |
+| No battery monitoring (GPIO0 invalid) | MAX17048 I2C fuel gauge driver (addr 0x36, SOC% in heartbeat) |
+| OTA update stub | HTTPUpdate library implemented in `updateFirmware()` |
+| No power management | Active/idle/sleep/deep_sleep modes with dynamic flags |
+| Audio recording stub | Full I2S DMA → WAV → presigned URL upload pipeline (INMP441 pins configured) |
+| 7 commands only | 12 commands: added read_config, factory_reset, set_heartbeat_interval, power_mode, get_network_info |
+| No firmware version tracking | `firmware_version` sent in heartbeat, ws-server updates DB |
+| No token refresh handling | Firmware handles `token_refresh` WebSocket message, saves new JWT to NVS |
