@@ -59,7 +59,11 @@ float BatteryGauge::readSOC() {
 
     uint16_t raw = readRegister(MAX17048_SOC);
     // SOC high byte = integer %, low byte = 1/256 %
-    return (float)(raw >> 8) + (float)(raw & 0xFF) / 256.0;
+    float soc = (float)(raw >> 8) + (float)(raw & 0xFF) / 256.0;
+    // Clamp to 0-100 (fuel gauge can report >100% when uncalibrated)
+    if (soc > 100.0) soc = 100.0;
+    if (soc < 0.0) soc = 0.0;
+    return soc;
 }
 
 float BatteryGauge::readChargeRate() {

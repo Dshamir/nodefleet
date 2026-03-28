@@ -347,15 +347,18 @@ void initialize4G() {
     LOG_INFO("Initializing 4G modem");
 
     if (!modem.begin()) {
-        LOG_ERROR("Modem initialization failed");
+        LOG_ERROR("Modem initialization failed — no AT response");
         return;
     }
 
-    if (modem.enableCellular()) {
-        device_state.modem_connected = true;
-        LOG_INFO("4G connection established");
+    // Modem is alive (AT responds) — enable GPS/signal even if SIM fails
+    device_state.modem_connected = true;
+    LOG_INFO("Modem ready — GPS and signal monitoring active");
+
+    if (modem.isConnected()) {
+        LOG_INFO("4G cellular data available");
     } else {
-        LOG_WARN("Failed to establish 4G connection");
+        LOG_WARN("4G data not available (SIM or registration issue) — GPS still works");
     }
 
     // Enable GPS

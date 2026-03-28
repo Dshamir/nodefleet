@@ -43,18 +43,15 @@ bool SIM7670GModem::begin() {
     // Disable echo
     sendAT("ATE0", response, 1000);
 
-    // Check SIM
+    // Check SIM (non-fatal — GPS and signal work without SIM)
     if (!checkSIM()) {
-        LOG_ERROR("SIM check failed");
-        return false;
-    }
-
-    LOG_INFO("SIM detected");
-
-    // Enable cellular connection
-    if (!enableCellular()) {
-        LOG_WARN("Cellular registration pending, will retry in background");
-        // Don't fail hard - modem is alive, just not registered yet
+        LOG_WARN("SIM check failed — GPS and signal will still work, cellular data unavailable");
+    } else {
+        LOG_INFO("SIM detected");
+        // Enable cellular connection
+        if (!enableCellular()) {
+            LOG_WARN("Cellular registration pending, will retry in background");
+        }
     }
 
     modem_ready = true;
