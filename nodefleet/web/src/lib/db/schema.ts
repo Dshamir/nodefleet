@@ -832,6 +832,32 @@ export const webhooksRelations = relations(webhooks, ({ one }) => ({
 export type Webhook = InferSelectModel<typeof webhooks>;
 export type InsertWebhook = InferInsertModel<typeof webhooks>;
 
+// ============================================================================
+// Protocol Routing Settings — Per-org data-to-protocol mapping
+// ============================================================================
+
+export const protocolSettings = pgTable(
+  'protocol_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    dataType: varchar('data_type', { length: 50 }).notNull(), // telemetry, gps, media, commands, status, alerts
+    websocketEnabled: boolean('websocket_enabled').notNull().default(true),
+    mqttEnabled: boolean('mqtt_enabled').notNull().default(false),
+    httpEnabled: boolean('http_enabled').notNull().default(false),
+    config: jsonb('config'), // extra per-protocol config (topic overrides, endpoints)
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgDataIdx: uniqueIndex('protocol_settings_org_data_idx').on(t.orgId, t.dataType),
+  })
+);
+
+export type ProtocolSetting = InferSelectModel<typeof protocolSettings>;
+export type InsertProtocolSetting = InferInsertModel<typeof protocolSettings>;
+
 // Aliases for backward compatibility with API routes
 export const telemetry = telemetryRecords;
 export const gpsData = gpsRecords;

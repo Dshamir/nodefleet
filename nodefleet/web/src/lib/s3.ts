@@ -52,7 +52,14 @@ export async function getPresignedUrl(
       Key: key,
     })
 
-    const url = await getSignedUrl(s3Client, command, { expiresIn })
+    let url = await getSignedUrl(s3Client, command, { expiresIn })
+
+    // Rewrite internal Docker hostname to public endpoint for browser access
+    const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT
+    const internalEndpoint = process.env.S3_ENDPOINT
+    if (publicEndpoint && internalEndpoint) {
+      url = url.replace(internalEndpoint, publicEndpoint)
+    }
 
     return url
   } catch (error) {
