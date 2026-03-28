@@ -669,6 +669,122 @@ export type InsertAccount = InferInsertModel<typeof accounts>;
 export type VerificationToken = InferSelectModel<typeof verificationTokens>;
 export type InsertVerificationToken = InferInsertModel<typeof verificationTokens>;
 
+// ============================================================================
+// Audit Logs — Immutable event trail
+// ============================================================================
+
+export const auditActionEnum = pgEnum('audit_action', [
+  'device_created',
+  'device_updated',
+  'device_deleted',
+  'device_paired',
+  'device_connected',
+  'device_disconnected',
+  'command_sent',
+  'command_completed',
+  'command_failed',
+  'command_timeout',
+  'settings_changed',
+  'user_login',
+  'user_logout',
+  'firmware_updated',
+  'config_changed',
+  'alert_triggered',
+  'media_uploaded',
+  'device_rebooted',
+  'factory_reset',
+]);
+
+export const auditLogs = pgTable(
+  'audit_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
+    action: auditActionEnum('action').notNull(),
+    entityType: varchar('entity_type', { length: 50 }),
+    entityId: varchar('entity_id', { length: 255 }),
+    details: jsonb('details'),
+    ipAddress: varchar('ip_address', { length: 45 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdIdx: index('audit_logs_org_id_idx').on(t.orgId),
+    deviceIdIdx: index('audit_logs_device_id_idx').on(t.deviceId),
+    actionIdx: index('audit_logs_action_idx').on(t.action),
+    createdAtIdx: index('audit_logs_created_at_idx').on(t.createdAt),
+  })
+);
+
+// ============================================================================
+// Device Settings — Per-device feature toggles and configuration
+// ============================================================================
+
+export const deviceSettings = pgTable(
+  'device_settings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    deviceId: uuid('device_id')
+      .notNull()
+      .unique()
+      .references(() => devices.id, { onDelete: 'cascade' }),
+    cameraEnabled: boolean('camera_enabled').notNull().default(true),
+    audioEnabled: boolean('audio_enabled').notNull().default(false),
+    gpsEnabled: boolean('gps_enabled').notNull().default(true),
+    lteEnabled: boolean('lte_enabled').notNull().default(true),
+    mqttEnabled: boolean('mqtt_enabled').notNull().default(false),
+    heartbeatInterval: integer('heartbeat_interval').notNull().default(30000),
+    gpsInterval: integer('gps_interval').notNull().default(60000),
+    cameraResolution: varchar('camera_resolution', { length: 20 }).notNull().default('QVGA'),
+    audioSampleRate: integer('audio_sample_rate').notNull().default(16000),
+    powerMode: varchar('power_mode', { length: 20 }).notNull().default('active'),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    deviceIdIdx: index('device_settings_device_id_idx').on(t.deviceId),
+  })
+);
+
+// ============================================================================
+// Alert Rules — Automated monitoring thresholds
+// ============================================================================
+
+export const alertOperatorEnum = pgEnum('alert_operator', ['lt', 'gt', 'eq']);
+export const alertActionEnum = pgEnum('alert_action_type', ['log', 'webhook', 'command']);
+
+export const alertRules = pgTable(
+  'alert_rules',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'cascade' }),
+    metric: varchar('metric', { length: 50 }).notNull(),
+    operator: alertOperatorEnum('operator').notNull(),
+    threshold: real('threshold').notNull(),
+    action: alertActionEnum('action').notNull().default('log'),
+    enabled: boolean('enabled').notNull().default(true),
+    lastTriggeredAt: timestamp('last_triggered_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdIdx: index('alert_rules_org_id_idx').on(t.orgId),
+    deviceIdIdx: index('alert_rules_device_id_idx').on(t.deviceId),
+  })
+);
+
+// Types
+export type AuditLog = InferSelectModel<typeof auditLogs>;
+export type InsertAuditLog = InferInsertModel<typeof auditLogs>;
+
+export type DeviceSettings = InferSelectModel<typeof deviceSettings>;
+export type InsertDeviceSettings = InferInsertModel<typeof deviceSettings>;
+
+export type AlertRule = InferSelectModel<typeof alertRules>;
+export type InsertAlertRule = InferInsertModel<typeof alertRules>;
+
 // Aliases for backward compatibility with API routes
 export const telemetry = telemetryRecords;
 export const gpsData = gpsRecords;

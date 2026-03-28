@@ -314,6 +314,12 @@ class NodeFleetWSServer {
       // Publish online status to Redis
       this.publishToRedis(`device:${deviceId}:status`, 'online');
 
+      // Audit trail: device connected
+      this.db.query(
+        `INSERT INTO audit_logs (device_id, action, details, created_at) VALUES ($1, 'device_connected', $2, NOW())`,
+        [deviceId, JSON.stringify({ connectedDevices: this.devices.size })]
+      ).catch(() => {});
+
       // Setup heartbeat mechanism
       this.setupDeviceHeartbeat(deviceId);
 
@@ -857,6 +863,18 @@ class NodeFleetWSServer {
 
     // Publish offline status to Redis
     this.publishToRedis(`device:${deviceId}:status`, 'offline');
+
+    // Audit trail: device disconnected
+    this.db.query(
+      `INSERT INTO audit_logs (device_id, action, created_at) VALUES ($1, 'device_disconnected', NOW())`,
+      [deviceId]
+    ).catch(() => {});
+
+    // Update device status to offline
+    this.db.query(
+      `UPDATE devices SET status = 'offline' WHERE id = $1`,
+      [deviceId]
+    ).catch(() => {});
 
     // Notify subscribed dashboards
     const subscribers = this.deviceSubscribers.get(deviceId);

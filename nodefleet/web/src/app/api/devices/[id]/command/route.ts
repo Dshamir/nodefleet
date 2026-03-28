@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { devices, deviceCommands, orgMembers } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { redis } from "@/lib/redis";
+import { logAudit } from "@/lib/audit";
 
 // GET: List commands and sync their statuses from Redis
 export async function GET(
@@ -132,6 +133,17 @@ export async function POST(
         command: validated.command,
       })
     );
+
+    // Audit trail
+    await logAudit({
+      orgId: member[0].orgId,
+      userId: session.user.id,
+      deviceId: params.id,
+      action: "command_sent",
+      entityType: "command",
+      entityId: commandId,
+      details: { command: validated.command, payload: validated.payload },
+    });
 
     return NextResponse.json(
       {

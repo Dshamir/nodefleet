@@ -706,15 +706,142 @@ void captureAndUploadVideo() {
 }
 
 void recordAndUploadAudio() {
-    LOG_INFO("Recording audio...");
+    LOG_INFO("Recording audio (%ds @ %dHz)...", AUDIO_DURATION_S, I2S_SAMPLE_RATE);
 
-    // TODO: Implement I2S audio recording
-    // This requires I2S microphone hardware configured in pins
+#if ENABLE_AUDIO && I2S_BCK_PIN >= 0
+    #include <driver/i2s.h>
 
-    // Placeholder: record 5 seconds of audio at 16kHz
-    // Save as WAV file with proper header
+    // Configure I2S
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate = I2S_SAMPLE_RATE,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 1024,
+        .use_apll = false,
+    };
 
-    LOG_WARN("Audio recording not yet implemented");
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_BCK_PIN,
+        .ws_io_num = I2S_WS_PIN,
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num = I2S_DIN_PIN,
+    };
+
+    if (i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL) != ESP_OK) {
+        LOG_ERROR("I2S driver install failed");
+        return;
+    }
+    if (i2s_set_pin(I2S_NUM_0, &pin_config) != ESP_OK) {
+        LOG_ERROR("I2S pin config failed");
+        i2s_driver_uninstall(I2S_NUM_0);
+        return;
+    }
+
+    // Calculate buffer size: sample_rate * bytes_per_sample * duration
+    size_t total_bytes = I2S_SAMPLE_RATE * 2 * AUDIO_DURATION_S;  // 16-bit = 2 bytes
+    size_t wav_size = total_bytes + 44;  // WAV header is 44 bytes
+
+    uint8_t* audio_buf = (uint8_t*)malloc(wav_size);
+    if (!audio_buf) {
+        LOG_ERROR("Audio buffer allocation failed (%d bytes)", wav_size);
+        i2s_driver_uninstall(I2S_NUM_0);
+        return;
+    }
+
+    // Write WAV header
+    uint8_t* h = audio_buf;
+    memcpy(h, "RIFF", 4); h += 4;
+    uint32_t chunk_size = wav_size - 8;
+    memcpy(h, &chunk_size, 4); h += 4;
+    memcpy(h, "WAVE", 4); h += 4;
+    memcpy(h, "fmt ", 4); h += 4;
+    uint32_t subchunk1_size = 16;
+    memcpy(h, &subchunk1_size, 4); h += 4;
+    uint16_t audio_format = 1;  // PCM
+    memcpy(h, &audio_format, 2); h += 2;
+    uint16_t num_channels = I2S_CHANNELS;
+    memcpy(h, &num_channels, 2); h += 2;
+    uint32_t sample_rate = I2S_SAMPLE_RATE;
+    memcpy(h, &sample_rate, 4); h += 4;
+    uint32_t byte_rate = I2S_SAMPLE_RATE * I2S_CHANNELS * 2;
+    memcpy(h, &byte_rate, 4); h += 4;
+    uint16_t block_align = I2S_CHANNELS * 2;
+    memcpy(h, &block_align, 2); h += 2;
+    uint16_t bits_per_sample = 16;
+    memcpy(h, &bits_per_sample, 2); h += 2;
+    memcpy(h, "data", 4); h += 4;
+    memcpy(h, &total_bytes, 4); h += 4;
+
+    // Record audio via DMA
+    LOG_INFO("Recording...");
+    size_t bytes_read = 0;
+    size_t offset = 44;  // After WAV header
+    while (offset < wav_size) {
+        size_t chunk = 0;
+        i2s_read(I2S_NUM_0, audio_buf + offset, min((size_t)2048, wav_size - offset), &chunk, portMAX_DELAY);
+        offset += chunk;
+    }
+
+    i2s_driver_uninstall(I2S_NUM_0);
+    LOG_INFO("Recording complete: %d bytes", wav_size);
+
+    // Upload via presigned URL
+    String filename = "audio_" + String(millis()) + ".wav";
+
+    StaticJsonDocument<256> reqDoc;
+    reqDoc["filename"] = filename;
+    reqDoc["contentType"] = "audio/wav";
+    reqDoc["size"] = wav_size;
+
+    String reqPayload;
+    serializeJson(reqDoc, reqPayload);
+
+    HTTPClient http;
+    String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT_HTTP) + "/api/devices/upload";
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("Authorization", "Bearer " + device_state.device_token);
+
+    int httpCode = http.POST(reqPayload);
+    if (httpCode == 200) {
+        String response = http.getString();
+        http.end();
+
+        StaticJsonDocument<512> respDoc;
+        if (!deserializeJson(respDoc, response) && respDoc.containsKey("uploadUrl")) {
+            String uploadUrl = respDoc["uploadUrl"].as<String>();
+
+            HTTPClient uploadHttp;
+            uploadHttp.begin(uploadUrl);
+            uploadHttp.addHeader("Content-Type", "audio/wav");
+            int uploadCode = uploadHttp.PUT(audio_buf, wav_size);
+
+            if (uploadCode >= 200 && uploadCode < 300) {
+                LOG_INFO("Audio uploaded: %s (%d bytes)", filename.c_str(), wav_size);
+                StaticJsonDocument<256> mediaMsg;
+                mediaMsg["type"] = "media_ready";
+                mediaMsg["fileType"] = "audio";
+                mediaMsg["filename"] = filename;
+                mediaMsg["size"] = wav_size;
+                ws_client.sendCustomMessage(mediaMsg);
+            } else {
+                LOG_ERROR("Audio upload failed: HTTP %d", uploadCode);
+            }
+            uploadHttp.end();
+        }
+    } else {
+        LOG_ERROR("Failed to get upload URL: HTTP %d", httpCode);
+        http.end();
+    }
+
+    free(audio_buf);
+#else
+    LOG_WARN("Audio not enabled (ENABLE_AUDIO=0 or I2S pins not configured)");
+#endif
 }
 
 void updateFirmware(const String& url) {

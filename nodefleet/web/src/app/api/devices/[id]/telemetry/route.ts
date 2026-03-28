@@ -38,10 +38,21 @@ export async function GET(
 
     // Parse query parameters
     const url = new URL(request.url);
-    const from = url.searchParams.get("from");
+    let from = url.searchParams.get("from");
     const to = url.searchParams.get("to");
+    const range = url.searchParams.get("range"); // 1h, 6h, 24h, 7d, 30d
     const limit = parseInt(url.searchParams.get("limit") || "100");
     const page = parseInt(url.searchParams.get("page") || "1");
+
+    // Range shorthand overrides 'from'
+    if (range && !from) {
+      const rangeMap: Record<string, number> = {
+        "1h": 3600000, "6h": 21600000, "24h": 86400000,
+        "7d": 604800000, "30d": 2592000000,
+      };
+      const ms = rangeMap[range];
+      if (ms) from = new Date(Date.now() - ms).toISOString();
+    }
 
     const offset = (page - 1) * limit;
 

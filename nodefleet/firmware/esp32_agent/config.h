@@ -72,10 +72,15 @@
 // Status LED
 #define STATUS_LED_PIN    7   // GPIO7
 
-// I2S Microphone (for audio recording)
-#define I2S_BCK_PIN       -1  // Bit clock
-#define I2S_WS_PIN        -1  // Word select
-#define I2S_DIN_PIN       -1  // Data in
+// I2S Microphone — INMP441 MEMS (arriving Monday)
+// Connect: VDD→3.3V, GND→GND, SD→DIN, SCK→BCK, WS→WS, L/R→GND(left channel)
+#define I2S_BCK_PIN       2   // Bit clock (GPIO2)
+#define I2S_WS_PIN        3   // Word select / LRCLK (GPIO3)
+#define I2S_DIN_PIN       1   // Data in / SD (GPIO1)
+#define I2S_SAMPLE_RATE   16000
+#define I2S_BITS          16
+#define I2S_CHANNELS      1   // Mono
+#define AUDIO_DURATION_S  5   // Default recording duration
 
 // ADC for battery voltage
 // GPIO0 is not valid ADC on ESP32-S3. Use AT+CBC via modem or MAX17048 I2C fuel gauge.
