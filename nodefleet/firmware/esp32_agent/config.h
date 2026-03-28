@@ -63,14 +63,14 @@
 #define CAMERA_PWDN       -1  // Not used
 #define CAMERA_RESET      -1  // Not used
 
-// SD Card (SPI mode)
+// SD Card (SPI mode - disabled, pins conflict with camera when enabled)
 #define SD_MOSI           11  // GPIO11
 #define SD_MISO           13  // GPIO13
 #define SD_CLK            12  // GPIO12
-#define SD_CS             10  // GPIO10 (Chip Select)
+#define SD_CS             10  // GPIO10
 
-// Status LED (GPIO7 used by camera D0, use GPIO38 or -1)
-#define STATUS_LED_PIN    -1  // Disabled - GPIO7 used by camera
+// Status LED
+#define STATUS_LED_PIN    7   // GPIO7
 
 // I2S Microphone (for audio recording)
 #define I2S_BCK_PIN       -1  // Bit clock
@@ -78,8 +78,8 @@
 #define I2S_DIN_PIN       -1  // Data in
 
 // ADC for battery voltage
-// Waveshare ESP32-S3-SIM7670G battery ADC on GPIO1 (ADC1_CH0)
-#define BATTERY_ADC_PIN   1   // GPIO1
+// GPIO0 is not valid ADC on ESP32-S3. Use AT+CBC via modem or MAX17048 I2C fuel gauge.
+#define BATTERY_ADC_PIN   -1  // Disabled - use modem AT+CBC for battery level
 #define BATTERY_ADC_CHANNEL ADC1_CHANNEL_0
 
 // ============================================================================
@@ -96,9 +96,9 @@
 // Features
 // ============================================================================
 #define ENABLE_GPS        1
-#define ENABLE_CAMERA     0  // Disabled until camera ribbon cable is verified
+#define ENABLE_CAMERA     0  // Disabled - camera init crashes (WDT reset). Enable after debug.
 #define ENABLE_AUDIO      0  // Requires I2S mic hardware
-#define ENABLE_SD_CARD    0  // Disabled - pins conflict with camera (GPIO10-13)
+#define ENABLE_SD_CARD    0  // Disabled - SDMMC crashes without card inserted
 #define ENABLE_NVS        1
 #define ENABLE_WATCHDOG   1
 #define WATCHDOG_TIMEOUT_MS 120000  // 2 minutes
@@ -107,7 +107,7 @@
 // Debug & Logging
 // ============================================================================
 #define DEBUG_SERIAL      1
-#define DEBUG_LEVEL       2  // 0=none, 1=error, 2=info, 3=verbose
+#define DEBUG_LEVEL       4  // 0=none, 1=error, 2=warn, 3=info, 4=verbose
 
 #if DEBUG_SERIAL
   #define LOG_ERROR(fmt, ...) do { if(DEBUG_LEVEL >= 1) Serial.printf("[ERROR] " fmt "\n", ##__VA_ARGS__); } while(0)

@@ -9,6 +9,7 @@
 #if ENABLE_SD_CARD
 #include <SD.h>
 #include <SPI.h>
+#include <SPI.h>
 #endif
 
 StorageManager::StorageManager() : sd_ready(false), sd_cs_pin(-1) {
@@ -197,21 +198,24 @@ bool StorageManager::sd_begin(int cs_pin) {
 #if ENABLE_SD_CARD
     sd_cs_pin = cs_pin;
 
-    // Initialize SPI
-    SPI.begin(SD_CLK, SD_MISO, SD_MOSI, SD_CS);
+    // Initialize SD card in SDMMC 1-bit mode (pins defined in config.h)
+    if (!SD_MMC.setPins(SDMMC_CLK, SDMMC_CMD, SDMMC_DATA)) {
+        LOG_ERROR("SD_MMC pin config failed");
+        return false;
+    }
 
-    if (!SD.begin(SD_CS, SPI, 4000000)) {
+    if (!SD_MMC.begin("/sdcard", true)) {  // true = 1-bit mode
         LOG_ERROR("SD card initialization failed");
         return false;
     }
 
-    uint8_t card_type = SD.cardType();
+    uint8_t card_type = SD_MMC.cardType();
     if (card_type == CARD_NONE) {
         LOG_ERROR("No SD card detected");
         return false;
     }
 
-    uint64_t card_size = SD.cardSize() / (1024 * 1024);
+    uint64_t card_size = SD_MMC.cardSize() / (1024 * 1024);
     LOG_INFO("SD Card Type: %d, Size: %lld MB", card_type, card_size);
 
     sd_ready = true;
@@ -230,7 +234,7 @@ bool StorageManager::sd_begin(int cs_pin) {
 
 bool StorageManager::sd_end() {
 #if ENABLE_SD_CARD
-    SD.end();
+    SD_MMC.end();
     sd_ready = false;
     return true;
 #else
@@ -249,7 +253,7 @@ bool StorageManager::sd_writeFile(const String& path, const uint8_t* data, size_
         return false;
     }
 
-    File file = SD.open(path, FILE_WRITE);
+    File file = SD_MMC.open(path, FILE_WRITE);
     if (!file) {
         LOG_ERROR("Failed to open file for writing: %s", path.c_str());
         return false;
@@ -276,7 +280,7 @@ bool StorageManager::sd_appendFile(const String& path, const uint8_t* data, size
         return false;
     }
 
-    File file = SD.open(path, FILE_APPEND);
+    File file = SD_MMC.open(path, FILE_APPEND);
     if (!file) {
         LOG_ERROR("Failed to open file for appending: %s", path.c_str());
         return false;
@@ -297,7 +301,7 @@ bool StorageManager::sd_readFile(const String& path, uint8_t* buffer, size_t buf
         return false;
     }
 
-    File file = SD.open(path, FILE_READ);
+    File file = SD_MMC.open(path, FILE_READ);
     if (!file) {
         LOG_ERROR("Failed to open file for reading: %s", path.c_str());
         return false;
@@ -319,7 +323,7 @@ bool StorageManager::sd_deleteFile(const String& path) {
         return false;
     }
 
-    if (!SD.remove(path)) {
+    if (!SD_MMC.remove(path)) {
         LOG_ERROR("Failed to delete file: %s", path.c_str());
         return false;
     }
@@ -336,7 +340,7 @@ bool StorageManager::sd_fileExists(const String& path) {
     if (!sd_ready) {
         return false;
     }
-    return SD.exists(path);
+    return SD_MMC.exists(path);
 #else
     return false;
 #endif
@@ -348,7 +352,7 @@ size_t StorageManager::sd_getFileSize(const String& path) {
         return 0;
     }
 
-    File file = SD.open(path, FILE_READ);
+    File file = SD_MMC.open(path, FILE_READ);
     if (!file) {
         return 0;
     }
@@ -367,11 +371,11 @@ bool StorageManager::sd_createDir(const String& path) {
         return false;
     }
 
-    if (SD.exists(path)) {
+    if (SD_MMC.exists(path)) {
         return true;
     }
 
-    return SD.mkdir(path);
+    return SD_MMC.mkdir(path);
 #else
     return false;
 #endif
@@ -382,7 +386,7 @@ bool StorageManager::sd_removeDir(const String& path) {
     if (!sd_ready) {
         return false;
     }
-    return SD.rmdir(path);
+    return SD_MMC.rmdir(path);
 #else
     return false;
 #endif
@@ -396,7 +400,7 @@ std::vector<String> StorageManager::sd_listDir(const String& path) {
         return files;
     }
 
-    File dir = SD.open(path);
+    File dir = SD_MMC.open(path);
     if (!dir || !dir.isDirectory()) {
         LOG_ERROR("Failed to open directory: %s", path.c_str());
         return files;
@@ -556,7 +560,7 @@ size_t StorageManager::sd_getFreeSpace() {
     }
     // Note: ESP32 SD library doesn't directly provide free space
     // This is a placeholder
-    return SD.cardSize() / 4;  // Approximate
+    return SD_MMC.cardSize() / 4;  // Approximate
 #else
     return 0;
 #endif
@@ -567,7 +571,7 @@ size_t StorageManager::sd_getTotalSpace() {
     if (!sd_ready) {
         return 0;
     }
-    return SD.cardSize();
+    return SD_MMC.cardSize();
 #else
     return 0;
 #endif
