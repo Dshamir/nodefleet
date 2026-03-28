@@ -190,6 +190,8 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 | No WiFi provisioning | AP captive portal ("NodeFleet-Setup") when WiFi fails — dark UI configures WiFi, server, MQTT, pairing code |
 | No OTA config | OTA_CHECK_URL, OTA_CHECK_INTERVAL, ENABLE_AUTO_OTA added to config.h |
 | No CI pipeline | GitHub Actions: web typecheck + ws-server typecheck + firmware compile |
+| Content Library images not rendering | Presigned download URLs used internal minio:9000. Fixed: rewrite to S3_PUBLIC_ENDPOINT in s3.ts |
+| No protocol routing settings | protocol_settings table + API: per-org data-type → protocol mapping (WS/MQTT/HTTP) |
 
 ---
 

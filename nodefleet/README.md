@@ -137,6 +137,7 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | MQTT broker | Running | Mosquitto 2 in docker-compose (port 51883 + WS 59001) |
 | MQTT device client | Working | PubSubClient publishes telemetry + GPS to broker (dual-protocol) |
 | WiFi provisioning | Working | AP captive portal ("NodeFleet-Setup") when WiFi fails — configure WiFi, server, MQTT, pairing |
+| Protocol routing | Working | Per-org settings: map data types (telemetry/GPS/media/commands/status/alerts) to protocols (WebSocket/MQTT/HTTP) |
 | Webhooks | Working | HMAC-SHA256 signed, 5 event types, CRUD API |
 | Audit trail | Working | Immutable log, 19 event types, filterable viewer |
 | Device diagnostics | Working | Health scoring (0-100), gauges, error log, recommendations |
@@ -183,6 +184,7 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | `/api/webhooks` | GET/POST | Webhook CRUD (HMAC-SHA256 signed) |
 | `/api/webhooks/stripe` | POST | Stripe webhook handler |
 | `/api/mqtt/status` | GET | MQTT broker status + config |
+| `/api/settings/protocols` | GET/PUT | Protocol routing: data type → protocol mapping |
 | `/api/schedules` | GET/POST | Schedule management |
 | `/api/schedules/[id]` | GET/PUT/DELETE | Schedule CRUD |
 | `/api/content` | GET | Media library |
