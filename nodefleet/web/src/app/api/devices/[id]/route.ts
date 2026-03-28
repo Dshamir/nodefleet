@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { devices, orgMembers, telemetryRecords, gpsRecords } from "@/lib/db/schema";
+import { devices, deviceTokens, orgMembers, telemetryRecords, gpsRecords } from "@/lib/db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { generatePairingCode } from "@/lib/utils";
+import { logAudit } from "@/lib/audit";
 
 const updateDeviceSchema = z.object({
   name: z.string().min(1).max(255).optional(),
@@ -180,10 +181,29 @@ export async function DELETE(
       return NextResponse.json({ error: "Device not found" }, { status: 404 });
     }
 
-    // Delete device (cascade deletes telemetry, gps, etc.)
-    await db.delete(devices).where(eq(devices.id, params.id));
+    // Decommission: set status to disabled
+    await db
+      .update(devices)
+      .set({ status: 'disabled', updatedAt: new Date() })
+      .where(eq(devices.id, params.id));
 
-    return NextResponse.json({ success: true });
+    // Delete all device tokens
+    await db
+      .delete(deviceTokens)
+      .where(eq(deviceTokens.deviceId, params.id));
+
+    // Audit trail
+    await logAudit({
+      orgId: member[0].orgId,
+      userId: session.user.id,
+      deviceId: params.id,
+      action: 'device_deleted',
+      entityType: 'device',
+      entityId: params.id,
+      details: { reason: 'decommissioned' },
+    });
+
+    return NextResponse.json({ success: true, message: 'Device decommissioned' });
   } catch (error) {
     console.error("Error deleting device:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

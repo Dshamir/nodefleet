@@ -785,6 +785,53 @@ export type InsertDeviceSettings = InferInsertModel<typeof deviceSettings>;
 export type AlertRule = InferSelectModel<typeof alertRules>;
 export type InsertAlertRule = InferInsertModel<typeof alertRules>;
 
+// ============================================================================
+// Webhooks — External event notification system
+// ============================================================================
+
+export const webhookEventEnum = pgEnum('webhook_event', [
+  'device_online',
+  'device_offline',
+  'command_completed',
+  'alert_triggered',
+  'low_battery',
+]);
+
+export const webhooks = pgTable(
+  'webhooks',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    url: varchar('url', { length: 500 }).notNull(),
+    events: jsonb('events').notNull(), // array of webhook event strings
+    secret: varchar('secret', { length: 255 }).notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    lastTriggeredAt: timestamp('last_triggered_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    orgIdIdx: index('webhooks_org_id_idx').on(t.orgId),
+  })
+);
+
+export const webhooksRelations = relations(webhooks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [webhooks.orgId],
+    references: [organizations.id],
+  }),
+}));
+
+// Types
+export type Webhook = InferSelectModel<typeof webhooks>;
+export type InsertWebhook = InferInsertModel<typeof webhooks>;
+
 // Aliases for backward compatibility with API routes
 export const telemetry = telemetryRecords;
 export const gpsData = gpsRecords;

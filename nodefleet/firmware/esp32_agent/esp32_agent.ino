@@ -64,6 +64,11 @@ DeviceState device_state = {
     .frame_count = 0
 };
 
+// Dynamic power profile flags
+bool gps_active = true;
+bool camera_active = true;
+uint32_t current_heartbeat_interval = HEARTBEAT_INTERVAL_MS;
+
 // Timing
 uint32_t last_heartbeat_ms = 0;
 uint32_t last_gps_update_ms = 0;
@@ -240,13 +245,13 @@ void loop() {
 
     // Send heartbeat at interval
     uint32_t now = millis();
-    if (now - last_heartbeat_ms >= HEARTBEAT_INTERVAL_MS) {
+    if (now - last_heartbeat_ms >= current_heartbeat_interval) {
         last_heartbeat_ms = now;
         sendHeartbeat();
     }
 
     // Update GPS at interval
-    if (ENABLE_GPS && now - last_gps_update_ms >= GPS_UPDATE_INTERVAL_MS) {
+    if (ENABLE_GPS && gps_active && now - last_gps_update_ms >= GPS_UPDATE_INTERVAL_MS) {
         last_gps_update_ms = now;
         updateGPS();
     }
@@ -452,23 +457,23 @@ void handleIncomingCommand(const JsonDocument& cmd) {
 
     if (command == "capture_photo") {
         LOG_INFO("Executing: capture_photo");
-        if (ENABLE_CAMERA && camera.isReady()) {
+        if (ENABLE_CAMERA && camera_active && camera.isReady()) {
             captureAndUploadPhoto();
             success = true;
             message = "Photo captured";
         } else {
-            message = "No camera module on this board";
+            message = camera_active ? "No camera module on this board" : "Camera disabled (idle/deep_sleep mode)";
             success = false;
         }
     }
     else if (command == "capture_video") {
         LOG_INFO("Executing: capture_video");
-        if (ENABLE_CAMERA && camera.isReady()) {
+        if (ENABLE_CAMERA && camera_active && camera.isReady()) {
             captureAndUploadVideo();
             success = true;
             message = "Video captured";
         } else {
-            message = "No camera module on this board";
+            message = camera_active ? "No camera module on this board" : "Camera disabled (idle/deep_sleep mode)";
             success = false;
         }
     }
@@ -565,12 +570,29 @@ void handleIncomingCommand(const JsonDocument& cmd) {
         if (cmd.containsKey("mode")) {
             String mode = cmd["mode"].as<String>();
             if (mode == "active") {
+                gps_active = true;
+                camera_active = true;
+                current_heartbeat_interval = HEARTBEAT_INTERVAL_MS;
                 success = true;
                 message = "Power mode: active (all systems on)";
             } else if (mode == "idle") {
-                // Disable GPS and camera, keep WiFi/LTE
+                gps_active = false;
+                camera_active = false;
+                current_heartbeat_interval = 300000; // 5 minutes
                 success = true;
-                message = "Power mode: idle (GPS/camera off)";
+                message = "Power mode: idle (GPS/camera off, heartbeat 5min)";
+            } else if (mode == "deep_sleep") {
+                uint32_t sleep_seconds = 300; // default 5 min
+                if (cmd.containsKey("duration_s")) {
+                    sleep_seconds = cmd["duration_s"].as<uint32_t>();
+                }
+                message = "Entering deep sleep for " + String(sleep_seconds) + "s...";
+                success = true;
+                ws_client.sendCommandAck(command_id, success, message);
+                delay(500);
+                esp_sleep_enable_timer_wakeup((uint64_t)sleep_seconds * 1000000ULL);
+                esp_deep_sleep_start();
+                return; // Will not reach here - device reboots on wake
             } else if (mode == "sleep") {
                 message = "Entering light sleep...";
                 success = true;
@@ -581,7 +603,7 @@ void handleIncomingCommand(const JsonDocument& cmd) {
                 return; // Resume after wakeup
             } else {
                 success = false;
-                message = "Unknown mode. Use: active, idle, sleep";
+                message = "Unknown mode. Use: active, idle, sleep, deep_sleep";
             }
         } else {
             success = false;
