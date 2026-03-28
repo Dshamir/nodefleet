@@ -22,7 +22,7 @@
 // ============================================================================
 // Pairing & Device Identity
 // ============================================================================
-#define PAIRING_CODE      "TZ56MW"  // Set during provisioning
+#define PAIRING_CODE      "9KA7BZ"  // Set during provisioning
 #define DEVICE_MODEL      "Waveshare-ESP32-S3-SIM7670G"
 #define FIRMWARE_VERSION  "1.0.0"
 
@@ -96,7 +96,7 @@
 // Features
 // ============================================================================
 #define ENABLE_GPS        1
-#define ENABLE_CAMERA     0  // Disabled - camera init crashes (WDT reset). Enable after debug.
+#define ENABLE_CAMERA     1  // OV2640 DVP - pins from branch-to-merge
 #define ENABLE_AUDIO      0  // Requires I2S mic hardware
 #define ENABLE_SD_CARD    0  // Disabled - SDMMC crashes without card inserted
 #define ENABLE_NVS        1
