@@ -475,6 +475,11 @@ class NodeFleetWSServer {
       });
     }
 
+    // Drain any pending commands from Redis queue on each heartbeat
+    this.drainCommandQueue(deviceId).catch(err =>
+      this.logger.error('Command queue drain failed', err)
+    );
+
     this.logger.debug(`Heartbeat from ${deviceId}`, heartbeatData);
   }
 
@@ -586,11 +591,14 @@ class NodeFleetWSServer {
 
     this.publishToRedis(`device:${deviceId}:command_ack`, JSON.stringify(ackData));
 
+    // Map device status to DB enum: success→completed, error→failed
+    const dbStatus = message.status === 'success' ? 'completed' : message.status === 'error' ? 'failed' : 'acknowledged';
+
     // Update command status in Redis and database
-    this.updateCommandStatus(message.commandId, message.status, message.result);
+    this.updateCommandStatus(message.commandId, dbStatus, message.result);
     this.db.query(
       `UPDATE device_commands SET status = $1, result = $2, completed_at = NOW() WHERE id = $3`,
-      [message.status, message.result ? JSON.stringify(message.result) : null, message.commandId]
+      [dbStatus, message.result ? JSON.stringify(message.result) : null, message.commandId]
     ).catch(err => this.logger.error('Failed to update command status in DB', err));
 
     // Notify subscribed dashboards
@@ -888,13 +896,18 @@ class NodeFleetWSServer {
 
   private async drainCommandQueue(deviceId: string): Promise<void> {
     const device = this.devices.get(deviceId);
-    if (!device || device.ws.readyState !== WebSocket.OPEN) return;
+    if (!device) {
+      return;
+    }
 
     const queueKey = `device:${deviceId}:commands`;
 
     try {
       // Pop all pending commands from the Redis list
       let cmd = await this.redis.rpop(queueKey);
+      if (cmd) {
+        this.logger.info(`Found queued command for ${deviceId}, processing...`);
+      }
       while (cmd) {
         try {
           const parsed = JSON.parse(cmd);

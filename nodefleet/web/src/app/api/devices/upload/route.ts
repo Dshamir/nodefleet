@@ -55,11 +55,18 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now();
     const s3Key = `devices/${verified.deviceId}/${timestamp}-${fileId}`;
 
-    const uploadUrl = await generatePresignedUrl(
+    let uploadUrl = await generatePresignedUrl(
       s3Key,
       validated.contentType,
       validated.size
     );
+
+    // Replace internal MinIO endpoint with public endpoint for device access
+    const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT;
+    const internalEndpoint = process.env.S3_ENDPOINT;
+    if (publicEndpoint && internalEndpoint) {
+      uploadUrl = uploadUrl.replace(internalEndpoint, publicEndpoint);
+    }
 
     await db.insert(mediaFiles).values({
       id: fileId,

@@ -76,11 +76,11 @@ bool CameraModule::initializeCamera() {
         config.fb_count  = 2;
         config.grab_mode = CAMERA_GRAB_LATEST;
     } else {
-        LOG_INFO("No PSRAM — falling back to DRAM, limiting to SVGA.");
+        LOG_INFO("No PSRAM — using DRAM with QVGA (320x240).");
         config.fb_location = CAMERA_FB_IN_DRAM;
-        if (config.frame_size > FRAMESIZE_SVGA) {
-            config.frame_size = FRAMESIZE_SVGA;
-        }
+        config.frame_size = FRAMESIZE_QVGA;  // 320x240 fits in DRAM
+        config.jpeg_quality = 12;
+        config.fb_count = 1;
     }
 
     esp_err_t err = esp_camera_init(&config);
