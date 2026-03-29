@@ -14,18 +14,6 @@ import {
   X,
   Shield,
   ChevronDown,
-  ShoppingCart,
-  DollarSign,
-  CreditCard,
-  Store,
-  Truck,
-  Factory,
-  Tag,
-  Package,
-  Receipt,
-  FileX2,
-  ShoppingBag,
-  Users,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -52,24 +40,6 @@ const navGroups: NavGroup[] = [
       { label: "Content Library", href: "/content", icon: FileText },
       { label: "Schedules", href: "/schedules", icon: Clock },
       { label: "Map", href: "/map", icon: Map },
-    ],
-  },
-  {
-    label: "Commerce",
-    icon: ShoppingCart,
-    items: [
-      { label: "Orders", href: "/commerce/orders", icon: ShoppingBag },
-      { label: "Pricing", href: "/commerce/pricing", icon: DollarSign },
-      { label: "Payment Gateways", href: "/commerce/payment-gateways", icon: CreditCard },
-      { label: "Shop", href: "/commerce/shop", icon: Store },
-      { label: "Shipping", href: "/commerce/shipping", icon: Truck },
-      { label: "Manufacturing", href: "/commerce/manufacturing", icon: Factory },
-      { label: "Promo Codes", href: "/commerce/promos", icon: Tag },
-      { label: "Inventory", href: "/commerce/inventory", icon: Package },
-      { label: "Invoices", href: "/commerce/invoices", icon: Receipt },
-      { label: "Tax Exemptions", href: "/commerce/tax", icon: FileX2 },
-      { label: "Cart Recovery", href: "/commerce/cart-recovery", icon: ShoppingCart },
-      { label: "Customers", href: "/commerce/customers", icon: Users },
     ],
   },
   {
