@@ -24,7 +24,6 @@ import {
   ShoppingCart,
   ShoppingBag,
   DollarSign,
-  CreditCard,
   Store,
   Truck,
   Factory,
