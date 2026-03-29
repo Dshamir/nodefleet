@@ -12,7 +12,9 @@ import {
   Loader2,
   Wifi,
   Server,
+  ArrowRight,
 } from "lucide-react";
+import Link from "next/link";
 
 interface DashboardStats {
   totalDevices: number;
@@ -225,6 +227,11 @@ export default function DashboardPage() {
                 <p className="text-sm text-slate-500 mt-1">
                   Activity from your devices will appear here
                 </p>
+                <Link href="/devices">
+                  <button className="mt-4 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-primary hover:text-primary-light transition-colors">
+                    Go to Devices <ArrowRight className="w-4 h-4" />
+                  </button>
+                </Link>
               </div>
             ) : (
               <div className="space-y-3">

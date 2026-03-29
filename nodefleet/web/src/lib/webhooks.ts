@@ -2,7 +2,18 @@ import { createHmac } from 'crypto';
 import { db } from './db';
 import { webhooks } from './db/schema';
 import { eq, and } from 'drizzle-orm';
+import { createLogger } from './logger';
 
+const logger = createLogger('webhooks');
+
+/**
+ * Triggers all matching webhooks for an organization and event type.
+ * Queries enabled webhooks whose event list includes the specified event,
+ * then fires each in a fire-and-forget manner (errors are logged, not thrown).
+ * @param orgId - Organization ID that owns the webhooks
+ * @param event - Event name to match (e.g. `"device.created"`, `"fleet.updated"`)
+ * @param payload - Event payload object to deliver in the webhook body
+ */
 export async function triggerWebhooks(
   orgId: string,
   event: string,
@@ -24,14 +35,26 @@ export async function triggerWebhooks(
     // Fire-and-forget: don't await all, just kick off requests
     for (const wh of matchingWebhooks) {
       fireWebhook(wh.id, wh.url, wh.secret, event, payload).catch((err) => {
-        console.error(`Webhook ${wh.id} failed:`, err);
+        logger.error(`Webhook ${wh.id} failed`, { error: String(err) });
       });
     }
   } catch (error) {
-    console.error('Error triggering webhooks:', error);
+    logger.error('Error triggering webhooks', { error: String(error) });
   }
 }
 
+/**
+ * Sends a single webhook HTTP POST request with HMAC-SHA256 signature.
+ * The request body includes the event name, payload, and ISO timestamp.
+ * The signature is sent in the `X-NodeFleet-Signature` header so
+ * receivers can verify payload authenticity.
+ * Updates `lastTriggeredAt` on the webhook record after delivery.
+ * @param webhookId - Database ID of the webhook record
+ * @param url - Target URL to POST the webhook to
+ * @param secret - HMAC secret used to sign the payload
+ * @param event - Event name being delivered
+ * @param payload - Event payload object
+ */
 async function fireWebhook(
   webhookId: string,
   url: string,
@@ -64,6 +87,6 @@ async function fireWebhook(
       .set({ lastTriggeredAt: new Date() })
       .where(eq(webhooks.id, webhookId));
   } catch (error) {
-    console.error(`Failed to POST webhook ${webhookId} to ${url}:`, error);
+    logger.error(`Failed to POST webhook ${webhookId} to ${url}`, { error: String(error) });
   }
 }

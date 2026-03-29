@@ -380,6 +380,13 @@ export default function SchedulesPage() {
             <div className="text-center py-12">
               <Clock className="w-12 h-12 text-slate-600 mx-auto mb-4" />
               <p className="text-slate-400">No schedules yet. Create one to automate device tasks.</p>
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-light transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Create your first schedule
+              </button>
             </div>
           ) : (
             <div className="overflow-x-auto">

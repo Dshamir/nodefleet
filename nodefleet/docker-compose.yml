@@ -3,6 +3,8 @@ services:
     image: postgres:16
     container_name: nodefleet-postgres
     restart: unless-stopped
+    mem_limit: 4g
+    cpus: '2.0'
     environment:
       POSTGRES_USER: nodefleet
       POSTGRES_PASSWORD: nodefleet
@@ -23,6 +25,8 @@ services:
     image: redis:7-alpine
     container_name: nodefleet-redis
     restart: unless-stopped
+    mem_limit: 1g
+    cpus: '0.5'
     ports:
       - "50379:6379"
     volumes:
@@ -39,6 +43,8 @@ services:
     image: minio/minio:latest
     container_name: nodefleet-minio
     restart: unless-stopped
+    mem_limit: 2g
+    cpus: '1.0'
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -78,6 +84,8 @@ services:
       dockerfile: Dockerfile
     container_name: nodefleet-web
     restart: on-failure:5
+    mem_limit: 2g
+    cpus: '1.0'
     depends_on:
       postgres:
         condition: service_healthy
@@ -113,6 +121,8 @@ services:
       dockerfile: Dockerfile
     container_name: nodefleet-ws
     restart: on-failure:5
+    mem_limit: 2g
+    cpus: '1.0'
     depends_on:
       redis:
         condition: service_healthy
@@ -148,6 +158,8 @@ services:
       dockerfile: Dockerfile
     container_name: nodefleet-nginx
     restart: on-failure:5
+    mem_limit: 512m
+    cpus: '0.5'
     depends_on:
       - web
       - ws-server
@@ -171,6 +183,8 @@ services:
     image: eclipse-mosquitto:2
     container_name: nodefleet-mqtt
     restart: unless-stopped
+    mem_limit: 512m
+    cpus: '0.5'
     ports:
       - "51883:1883"
       - "59001:9001"

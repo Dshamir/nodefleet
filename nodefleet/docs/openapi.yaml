@@ -1,0 +1,1504 @@
+openapi: 3.1.0
+info:
+  title: NodeFleet API
+  version: 1.0.0
+  description: |
+    IoT device fleet management platform API. Provides endpoints for managing
+    devices, fleets, schedules, content, webhooks, API keys, and organization settings.
+  contact:
+    name: NodeFleet Support
+    email: dshamir@blucap.ca
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:3000/api
+    description: Local development
+  - url: https://nodefleet.app/api
+    description: Production
+
+security:
+  - cookieSession: []
+
+components:
+  securitySchemes:
+    cookieSession:
+      type: apiKey
+      in: cookie
+      name: next-auth.session-token
+      description: NextAuth.js session cookie for dashboard users
+    bearerJWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token for device-to-cloud authentication
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        hwModel:
+          type: string
+        serialNumber:
+          type: string
+        fleetId:
+          type: string
+          format: uuid
+          nullable: true
+        status:
+          type: string
+          enum: [online, offline, error]
+        lastSeen:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateDevice:
+      type: object
+      required: [name, hwModel]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        hwModel:
+          type: string
+          minLength: 1
+          maxLength: 100
+        serialNumber:
+          type: string
+          maxLength: 100
+        fleetId:
+          type: string
+          format: uuid
+          nullable: true
+
+    Fleet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        deviceCount:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateFleet:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+
+    Schedule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        repeatType:
+          type: string
+          enum: [once, daily, weekly, monthly, cron]
+        cronExpression:
+          type: string
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateSchedule:
+      type: object
+      required: [name, repeatType]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        repeatType:
+          type: string
+          enum: [once, daily, weekly, monthly, cron]
+        cronExpression:
+          type: string
+        isActive:
+          type: boolean
+          default: true
+
+    ContentItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        type:
+          type: string
+          enum: [firmware, config, media]
+        url:
+          type: string
+          format: uri
+        size:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+
+    Webhook:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        lastTriggeredAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateWebhook:
+      type: object
+      required: [url, events]
+      properties:
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+          minItems: 1
+        isActive:
+          type: boolean
+          default: true
+
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        prefix:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateApiKey:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        expiresAt:
+          type: string
+          format: date-time
+
+    AuditEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        resource:
+          type: string
+        resourceId:
+          type: string
+        userId:
+          type: string
+        details:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+
+    DashboardStats:
+      type: object
+      properties:
+        totalDevices:
+          type: integer
+        onlineDevices:
+          type: integer
+        totalFleets:
+          type: integer
+        totalSchedules:
+          type: integer
+        recentEvents:
+          type: integer
+
+    TelemetryPoint:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        cpu:
+          type: number
+        memory:
+          type: number
+        temperature:
+          type: number
+        custom:
+          type: object
+
+    GpsPoint:
+      type: object
+      properties:
+        latitude:
+          type: number
+        longitude:
+          type: number
+        altitude:
+          type: number
+        speed:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+
+    ProtocolRouting:
+      type: object
+      properties:
+        telemetry:
+          type: string
+          enum: [websocket, mqtt, http]
+        gps:
+          type: string
+          enum: [websocket, mqtt, http]
+        media:
+          type: string
+          enum: [websocket, mqtt, http]
+        commands:
+          type: string
+          enum: [websocket, mqtt, http]
+        status:
+          type: string
+          enum: [websocket, mqtt, http]
+        alerts:
+          type: string
+          enum: [websocket, mqtt, http]
+
+    Register:
+      type: object
+      required: [name, email, password, confirmPassword]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        confirmPassword:
+          type: string
+
+    ChangePassword:
+      type: object
+      required: [currentPassword, newPassword, confirmPassword]
+      properties:
+        currentPassword:
+          type: string
+          minLength: 1
+        newPassword:
+          type: string
+          minLength: 8
+        confirmPassword:
+          type: string
+
+  parameters:
+    DeviceId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    FleetId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ScheduleId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ContentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    KeyId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    X-RateLimit-Limit:
+      schema:
+        type: integer
+      description: Maximum requests per window
+    X-RateLimit-Remaining:
+      schema:
+        type: integer
+      description: Remaining requests in current window
+    X-RateLimit-Reset:
+      schema:
+        type: integer
+      description: Unix timestamp when the rate limit resets
+
+paths:
+  # ─── Health ────────────────────────────────────────────────
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns service health status and uptime
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  uptime:
+                    type: number
+
+  # ─── Auth ──────────────────────────────────────────────────
+  /auth/{...nextauth}:
+    get:
+      tags: [Auth]
+      summary: NextAuth.js handler (GET)
+      description: Handles NextAuth session, CSRF, providers, and callback routes
+      security: []
+      parameters:
+        - name: nextauth
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Auth response varies by sub-route
+    post:
+      tags: [Auth]
+      summary: NextAuth.js handler (POST)
+      description: Handles sign-in, sign-out, and callback POST requests
+      security: []
+      parameters:
+        - name: nextauth
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Auth response varies by sub-route
+
+  /auth/profile:
+    get:
+      tags: [Auth]
+      summary: Get current user profile
+      description: Returns the authenticated user's profile information
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  email:
+                    type: string
+                  image:
+                    type: string
+                    nullable: true
+        '401':
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      tags: [Auth]
+      summary: Update current user profile
+      description: Updates the authenticated user's name or image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                image:
+                  type: string
+      responses:
+        '200':
+          description: Profile updated
+        '401':
+          description: Not authenticated
+
+  /auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change password
+      description: Changes the authenticated user's password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePassword'
+      responses:
+        '200':
+          description: Password changed successfully
+        '400':
+          description: Validation error or incorrect current password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: Not authenticated
+
+  /auth/delete-account:
+    delete:
+      tags: [Auth]
+      summary: Delete account
+      description: Permanently deletes the authenticated user's account and all associated data
+      responses:
+        '200':
+          description: Account deleted
+        '401':
+          description: Not authenticated
+
+  /register:
+    post:
+      tags: [Auth]
+      summary: Register new user
+      description: Creates a new user account and organization
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Register'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  email:
+                    type: string
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  # ─── Devices ───────────────────────────────────────────────
+  /devices:
+    get:
+      tags: [Devices]
+      summary: List devices
+      description: Returns all devices for the authenticated organization
+      parameters:
+        - name: fleetId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [online, offline, error]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of devices
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Device'
+        '401':
+          description: Not authenticated
+    post:
+      tags: [Devices]
+      summary: Create device
+      description: Registers a new device in the organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDevice'
+      responses:
+        '201':
+          description: Device created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /devices/{id}:
+    get:
+      tags: [Devices]
+      summary: Get device by ID
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Device details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '404':
+          description: Device not found
+    put:
+      tags: [Devices]
+      summary: Update device
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDevice'
+      responses:
+        '200':
+          description: Device updated
+        '404':
+          description: Device not found
+    delete:
+      tags: [Devices]
+      summary: Delete device
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Device deleted
+        '404':
+          description: Device not found
+
+  /devices/{id}/telemetry:
+    get:
+      tags: [Devices]
+      summary: Get device telemetry
+      description: Returns recent telemetry data points for a device
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Telemetry data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TelemetryPoint'
+    post:
+      tags: [Devices]
+      summary: Ingest telemetry
+      description: Accepts telemetry data from a device
+      security:
+        - bearerJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TelemetryPoint'
+      responses:
+        '201':
+          description: Telemetry recorded
+        '401':
+          description: Invalid device token
+
+  /devices/{id}/telemetry/aggregate:
+    get:
+      tags: [Devices]
+      summary: Get aggregated telemetry
+      description: Returns min/max/avg aggregated telemetry over a time range
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - name: period
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [1h, 6h, 24h, 7d, 30d]
+        - name: metric
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Aggregated telemetry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  min:
+                    type: number
+                  max:
+                    type: number
+                  avg:
+                    type: number
+                  count:
+                    type: integer
+
+  /devices/{id}/gps:
+    get:
+      tags: [Devices]
+      summary: Get device GPS history
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: GPS trail
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GpsPoint'
+    post:
+      tags: [Devices]
+      summary: Ingest GPS data
+      security:
+        - bearerJWT: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GpsPoint'
+      responses:
+        '201':
+          description: GPS point recorded
+
+  /devices/{id}/command:
+    post:
+      tags: [Devices]
+      summary: Send command to device
+      description: Queues a command for delivery to a device via its active transport
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                  example: reboot
+                payload:
+                  type: object
+      responses:
+        '200':
+          description: Command queued
+        '404':
+          description: Device not found
+
+  /devices/{id}/health:
+    get:
+      tags: [Devices]
+      summary: Get device health
+      description: Returns the latest health metrics for a device
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Device health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, critical]
+                  uptime:
+                    type: number
+                  lastSeen:
+                    type: string
+                    format: date-time
+
+  /devices/{id}/settings:
+    get:
+      tags: [Devices]
+      summary: Get device settings
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      responses:
+        '200':
+          description: Device settings
+          content:
+            application/json:
+              schema:
+                type: object
+    put:
+      tags: [Devices]
+      summary: Update device settings
+      parameters:
+        - $ref: '#/components/parameters/DeviceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Settings updated
+
+  /devices/heartbeat:
+    post:
+      tags: [Devices]
+      summary: Device heartbeat
+      description: Accepts a heartbeat signal from a device to update its online status
+      security:
+        - bearerJWT: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                deviceId:
+                  type: string
+                  format: uuid
+                uptime:
+                  type: number
+      responses:
+        '200':
+          description: Heartbeat acknowledged
+          headers:
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+            X-RateLimit-Remaining:
+              $ref: '#/components/headers/X-RateLimit-Remaining'
+            X-RateLimit-Reset:
+              $ref: '#/components/headers/X-RateLimit-Reset'
+
+  /devices/pair:
+    post:
+      tags: [Devices]
+      summary: Pair device with pairing code
+      description: Associates a discovered device with the organization using a pairing code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairingCode]
+              properties:
+                pairingCode:
+                  type: string
+                  example: A1B2C3
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Device paired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+        '404':
+          description: Invalid pairing code
+
+  /devices/upload:
+    post:
+      tags: [Devices]
+      summary: Upload firmware or content to devices
+      description: Uploads a file and associates it with one or more devices
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                deviceIds:
+                  type: string
+                  description: Comma-separated device UUIDs
+      responses:
+        '200':
+          description: Upload complete
+        '400':
+          description: No file provided
+
+  /discovery:
+    get:
+      tags: [Devices]
+      summary: Discover devices on network
+      description: Returns devices broadcasting on the local network awaiting pairing
+      responses:
+        '200':
+          description: Discovered devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    mac:
+                      type: string
+                    ip:
+                      type: string
+                    hwModel:
+                      type: string
+                    pairingCode:
+                      type: string
+
+  # ─── Fleets ────────────────────────────────────────────────
+  /fleets:
+    get:
+      tags: [Fleets]
+      summary: List fleets
+      responses:
+        '200':
+          description: List of fleets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Fleet'
+    post:
+      tags: [Fleets]
+      summary: Create fleet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFleet'
+      responses:
+        '201':
+          description: Fleet created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fleet'
+        '400':
+          description: Validation error
+
+  /fleets/{id}:
+    get:
+      tags: [Fleets]
+      summary: Get fleet by ID
+      parameters:
+        - $ref: '#/components/parameters/FleetId'
+      responses:
+        '200':
+          description: Fleet details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Fleet'
+        '404':
+          description: Fleet not found
+    put:
+      tags: [Fleets]
+      summary: Update fleet
+      parameters:
+        - $ref: '#/components/parameters/FleetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFleet'
+      responses:
+        '200':
+          description: Fleet updated
+        '404':
+          description: Fleet not found
+    delete:
+      tags: [Fleets]
+      summary: Delete fleet
+      parameters:
+        - $ref: '#/components/parameters/FleetId'
+      responses:
+        '200':
+          description: Fleet deleted
+        '404':
+          description: Fleet not found
+
+  /fleets/{id}/command:
+    post:
+      tags: [Fleets]
+      summary: Send command to all fleet devices
+      description: Broadcasts a command to every device in the fleet
+      parameters:
+        - $ref: '#/components/parameters/FleetId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type]
+              properties:
+                type:
+                  type: string
+                payload:
+                  type: object
+      responses:
+        '200':
+          description: Command broadcast to fleet
+        '404':
+          description: Fleet not found
+
+  # ─── Schedules ─────────────────────────────────────────────
+  /schedules:
+    get:
+      tags: [Schedules]
+      summary: List schedules
+      responses:
+        '200':
+          description: List of schedules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Schedule'
+    post:
+      tags: [Schedules]
+      summary: Create schedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSchedule'
+      responses:
+        '201':
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+
+  /schedules/{id}:
+    get:
+      tags: [Schedules]
+      summary: Get schedule by ID
+      parameters:
+        - $ref: '#/components/parameters/ScheduleId'
+      responses:
+        '200':
+          description: Schedule details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+        '404':
+          description: Schedule not found
+    put:
+      tags: [Schedules]
+      summary: Update schedule
+      parameters:
+        - $ref: '#/components/parameters/ScheduleId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSchedule'
+      responses:
+        '200':
+          description: Schedule updated
+    delete:
+      tags: [Schedules]
+      summary: Delete schedule
+      parameters:
+        - $ref: '#/components/parameters/ScheduleId'
+      responses:
+        '200':
+          description: Schedule deleted
+
+  # ─── Content ───────────────────────────────────────────────
+  /content:
+    get:
+      tags: [Content]
+      summary: List content items
+      description: Returns firmware, configs, and media files for the organization
+      responses:
+        '200':
+          description: List of content items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentItem'
+    post:
+      tags: [Content]
+      summary: Create content item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, type]
+              properties:
+                title:
+                  type: string
+                type:
+                  type: string
+                  enum: [firmware, config, media]
+                description:
+                  type: string
+      responses:
+        '201':
+          description: Content item created
+
+  /content/upload:
+    post:
+      tags: [Content]
+      summary: Upload content file
+      description: Uploads a file to S3 and creates a content item record
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                title:
+                  type: string
+                type:
+                  type: string
+                  enum: [firmware, config, media]
+      responses:
+        '201':
+          description: File uploaded and content item created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentItem'
+
+  /content/{id}:
+    get:
+      tags: [Content]
+      summary: Get content item
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200':
+          description: Content item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContentItem'
+        '404':
+          description: Content not found
+    delete:
+      tags: [Content]
+      summary: Delete content item
+      parameters:
+        - $ref: '#/components/parameters/ContentId'
+      responses:
+        '200':
+          description: Content deleted
+        '404':
+          description: Content not found
+
+  # ─── Audit ─────────────────────────────────────────────────
+  /audit:
+    get:
+      tags: [Audit]
+      summary: List audit log entries
+      description: Returns organization audit trail with filtering support
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resource
+          in: query
+          schema:
+            type: string
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Audit log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AuditEntry'
+
+  # ─── Webhooks ──────────────────────────────────────────────
+  /webhooks:
+    get:
+      tags: [Webhooks]
+      summary: List webhooks
+      responses:
+        '200':
+          description: List of webhooks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Webhook'
+    post:
+      tags: [Webhooks]
+      summary: Create webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWebhook'
+      responses:
+        '201':
+          description: Webhook created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Webhook'
+        '400':
+          description: Validation error
+
+  /webhooks/stripe:
+    post:
+      tags: [Webhooks]
+      summary: Stripe webhook receiver
+      description: Receives and processes Stripe webhook events for subscription management
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processed
+        '400':
+          description: Invalid signature
+
+  # ─── API Keys ──────────────────────────────────────────────
+  /keys:
+    get:
+      tags: [Settings]
+      summary: List API keys
+      responses:
+        '200':
+          description: List of API keys (secrets are masked)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ApiKey'
+    post:
+      tags: [Settings]
+      summary: Create API key
+      description: Generates a new API key. The full secret is only returned once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApiKey'
+      responses:
+        '201':
+          description: API key created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiKey'
+                  - type: object
+                    properties:
+                      secret:
+                        type: string
+                        description: Full API key secret (shown only once)
+
+  /keys/{id}:
+    delete:
+      tags: [Settings]
+      summary: Revoke API key
+      parameters:
+        - $ref: '#/components/parameters/KeyId'
+      responses:
+        '200':
+          description: API key revoked
+        '404':
+          description: Key not found
+
+  # ─── Organization ──────────────────────────────────────────
+  /org:
+    get:
+      tags: [Settings]
+      summary: Get organization details
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  plan:
+                    type: string
+                  createdAt:
+                    type: string
+                    format: date-time
+    put:
+      tags: [Settings]
+      summary: Update organization
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+      responses:
+        '200':
+          description: Organization updated
+
+  # ─── Settings ──────────────────────────────────────────────
+  /settings/protocols:
+    get:
+      tags: [Settings]
+      summary: Get protocol routing configuration
+      description: Returns per-data-type transport protocol assignments
+      responses:
+        '200':
+          description: Protocol routing config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProtocolRouting'
+    put:
+      tags: [Settings]
+      summary: Update protocol routing
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProtocolRouting'
+      responses:
+        '200':
+          description: Protocol routing updated
+
+  # ─── MQTT ──────────────────────────────────────────────────
+  /mqtt/status:
+    get:
+      tags: [Settings]
+      summary: Get MQTT broker status
+      description: Returns the connection status and stats for the MQTT broker
+      responses:
+        '200':
+          description: MQTT status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                  clientCount:
+                    type: integer
+                  messagesPerSecond:
+                    type: number
+
+  # ─── Dashboard ─────────────────────────────────────────────
+  /dashboard/stats:
+    get:
+      tags: [Settings]
+      summary: Get dashboard statistics
+      description: Returns aggregate counts for the dashboard overview
+      responses:
+        '200':
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+
+tags:
+  - name: Health
+    description: Service health and readiness
+  - name: Auth
+    description: Authentication, registration, and user profile management
+  - name: Devices
+    description: Device CRUD, telemetry, GPS, commands, and pairing
+  - name: Fleets
+    description: Fleet management and fleet-wide commands
+  - name: Schedules
+    description: Scheduled task management
+  - name: Content
+    description: Firmware, config, and media content library
+  - name: Audit
+    description: Organization audit trail
+  - name: Webhooks
+    description: Webhook configuration and event delivery
+  - name: Settings
+    description: API keys, organization, protocol routing, MQTT, and dashboard

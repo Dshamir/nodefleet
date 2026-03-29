@@ -17,7 +17,7 @@ import { useState, useEffect, useCallback } from "react";
 const DeviceMap = dynamic(
   () => import("@/components/dashboard/device-map").then((mod) => mod.DeviceMap),
   { ssr: false, loading: () => (
-    <div className="w-full h-[500px] bg-slate-900 rounded-lg flex items-center justify-center">
+    <div className="w-full h-[50vh] min-h-[300px] bg-slate-900 rounded-lg flex items-center justify-center">
       <p className="text-slate-500">Loading map...</p>
     </div>
   )}
@@ -231,11 +231,11 @@ export default function MapPage() {
         </CardHeader>
         <CardContent>
           {error ? (
-            <div className="w-full h-[500px] bg-slate-900 rounded-lg flex items-center justify-center">
+            <div className="w-full h-[50vh] min-h-[300px] bg-slate-900 rounded-lg flex items-center justify-center">
               <p className="text-red-400">{error}</p>
             </div>
           ) : loading ? (
-            <div className="w-full h-[500px] bg-slate-900 rounded-lg flex items-center justify-center">
+            <div className="w-full h-[50vh] min-h-[300px] bg-slate-900 rounded-lg flex items-center justify-center">
               <Loader2 className="w-8 h-8 animate-spin text-slate-500" />
             </div>
           ) : (

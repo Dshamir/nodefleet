@@ -6,6 +6,9 @@ import { eq } from "drizzle-orm";
 import jwt from "jsonwebtoken";
 import { v4 as uuidv4 } from "uuid";
 import { logAudit } from "@/lib/audit";
+import { createLogger } from "@/lib/logger";
+
+const logger = createLogger('device-pairing');
 
 const pairSchema = z.object({
   pairingCode: z.string().min(1).max(10),
@@ -127,7 +130,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });
     }
-    console.error("Error pairing device:", error);
+    logger.error("Error pairing device", { error: String(error) });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

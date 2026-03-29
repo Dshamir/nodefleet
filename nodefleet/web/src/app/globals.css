@@ -35,6 +35,23 @@
   --slate-50: #f8fafc;
 }
 
+/* Light theme overrides — activate with class="light" on <html> */
+html.light {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --primary: #0284c7;
+  --primary-dark: #0369a1;
+  --primary-light: #0ea5e9;
+  --secondary: #64748b;
+  --secondary-dark: #475569;
+  --success: #059669;
+  --warning: #d97706;
+  --error: #dc2626;
+  --border: #e2e8f0;
+  --input: #f8fafc;
+  --ring: #0284c7;
+}
+
 * {
   @apply border-border;
 }

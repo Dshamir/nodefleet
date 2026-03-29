@@ -35,10 +35,10 @@ export function Header() {
   const breadcrumbs = getBreadcrumbs(pathname);
 
   return (
-    <header className="h-16 border-b border-slate-800 bg-slate-950/50 backdrop-blur-md sticky top-0 z-30 lg:z-20">
+    <header role="banner" className="h-16 border-b border-slate-800 bg-slate-950/50 backdrop-blur-md sticky top-0 z-30 lg:z-20">
       <div className="h-full px-6 flex items-center justify-between gap-4">
         {/* Breadcrumbs */}
-        <div className="flex items-center gap-2 text-sm text-slate-400 hidden sm:flex">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-slate-400 hidden sm:flex">
           {breadcrumbs.map((crumb, idx) => (
             <div key={idx} className="flex items-center gap-2">
               {idx > 0 && <ChevronRight className="w-4 h-4 text-slate-600" />}
@@ -47,7 +47,7 @@ export function Header() {
               </span>
             </div>
           ))}
-        </div>
+        </nav>
 
         {/* Search */}
         <div className="relative flex-1 max-w-md">
@@ -55,6 +55,7 @@ export function Header() {
           <Input
             type="search"
             placeholder="Search devices, content..."
+            aria-label="Search"
             className="bg-slate-900/50 border-slate-800 text-white placeholder-slate-500 pl-10 focus-ring"
           />
         </div>

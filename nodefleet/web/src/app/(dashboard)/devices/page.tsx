@@ -478,17 +478,17 @@ export default function DevicesPage() {
                         {device.name}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-slate-400">{device.hwModel}</TableCell>
-                    <TableCell className="text-slate-400">
+                    <TableCell className="text-slate-400 text-xs sm:text-sm">{device.hwModel}</TableCell>
+                    <TableCell className="text-slate-400 text-xs sm:text-sm">
                       {device.fleetId ? fleetMap.get(device.fleetId) || "Unknown" : "--"}
                     </TableCell>
                     <TableCell>
                       <DeviceStatusBadge status={device.status} />
                     </TableCell>
-                    <TableCell className="text-slate-400 text-sm">
+                    <TableCell className="text-slate-400 text-xs sm:text-sm">
                       {formatRelativeTime(device.lastHeartbeatAt)}
                     </TableCell>
-                    <TableCell className="text-slate-400 text-sm font-mono">
+                    <TableCell className="text-slate-400 text-xs sm:text-sm font-mono">
                       {device.serialNumber}
                     </TableCell>
                     <TableCell className="text-right">
@@ -516,7 +516,14 @@ export default function DevicesPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8 text-slate-400">
-                    No devices found
+                    <p>No devices found</p>
+                    <button
+                      onClick={() => setAddOpen(true)}
+                      className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-light transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add your first device
+                    </button>
                   </TableCell>
                 </TableRow>
               )}
