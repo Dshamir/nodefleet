@@ -4,12 +4,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AlertCircle, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -37,7 +39,7 @@ export default function LoginPage() {
 
       // 302/307 = success (NextAuth redirects after login), 200 with error = failed
       if (result.status === 302 || result.status === 307 || result.status === 0) {
-        window.location.href = "/devices";
+        window.location.href = callbackUrl;
       } else if (result.ok) {
         // NextAuth returns 200 with error page on failure
         setError("Invalid email or password");

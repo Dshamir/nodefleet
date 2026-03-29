@@ -48,7 +48,8 @@ export default auth((req) => {
   if (isPublicRoute) {
     // If already authenticated and trying to access login/register, redirect to home
     if (isAuthenticated && (pathname === '/login' || pathname === '/register')) {
-      return NextResponse.redirect(new URL('/devices', req.nextUrl.origin))
+      const callbackUrl = req.nextUrl.searchParams.get('callbackUrl') || '/'
+      return NextResponse.redirect(new URL(callbackUrl, req.nextUrl.origin))
     }
     const response = NextResponse.next()
     return isApiRoute ? setCorsHeaders(response) : response
