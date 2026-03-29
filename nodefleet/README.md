@@ -60,6 +60,8 @@ After the services are running:
 | MinIO Console  | 50901     | 9001           | Storage UI               |
 | UDP Discovery  | 50555     | 5555 (UDP)     | Device auto-discovery    |
 | ngrok          | 50040     | 4040           | Tunnel dashboard         |
+| Prometheus     | 50090     | 9090           | Metrics collection       |
+| Grafana        | 50030     | 3000           | Monitoring dashboards    |
 
 ## Default Test Credentials
 
@@ -119,6 +121,12 @@ nodefleet/
 - **Device detail page** -- Per-device view with real telemetry, GPS, and command history across 4 tabs (Overview, Telemetry, GPS, Commands). Send commands directly from the detail page.
 - **Dashboard stats API** -- Real-time dashboard statistics (total devices, online count, media files, storage used, activity) fetched from the database. Zero hardcoded data across all pages.
 - **Device Auto-Discovery** - UDP broadcast and mDNS for zero-config LAN setup
+- **Toast notifications** -- Real-time feedback on all user actions (success, error, warning, info) with auto-dismiss and color-coded icons.
+- **Skeleton loading** -- Pulse-animated loading placeholders matching dashboard layout, preventing content layout shift.
+- **Error recovery** -- Graceful error boundary with "Try again" button, error details, and error digest tracking.
+- **Accessibility** -- Skip-to-content link, ARIA navigation landmarks, screen reader support, keyboard-navigable.
+- **DataTable with sorting** -- TanStack Table integration with clickable column headers, pagination controls, and "Showing X of Y" indicator.
+- **Form validation** -- Client-side Zod schema validation with field-level inline error messages and required field indicators.
 
 ## Verified Hardware
 
@@ -148,6 +156,8 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | Audio (INMP441) | Pending Monday | Firmware coded, hardware arriving Monday |
 | PSRAM (8MB OPI) | Pending Monday | Need Arduino IDE sdkconfig extraction |
 | GPS/GNSS | Pending Monday | GNSS module needs USB power cycle to recover (AT+CGPSINFO returns ERROR) |
+| Monitoring stack | Running | Prometheus + Grafana + node-exporter (ports 50090, 50030) |
+| Backup system | Working | pg_dump + MinIO + Redis via scripts/backup.sh |
 
 ## Documentation
 
@@ -165,6 +175,9 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 - [docs/runbooks/INCIDENT_RESPONSE.md](./docs/runbooks/INCIDENT_RESPONSE.md) -- Incident response procedures
 - [docs/runbooks/DATABASE_MAINTENANCE.md](./docs/runbooks/DATABASE_MAINTENANCE.md) -- Database maintenance guide
 - [docs/runbooks/ROLLBACK.md](./docs/runbooks/ROLLBACK.md) -- Service and firmware rollback procedures
+- [docs/UIUX_VISUAL_CHANGES.md](./docs/UIUX_VISUAL_CHANGES.md) -- UI/UX visual changes from gap closure
+- [docs/USER_PLAYBOOK.md](./docs/USER_PLAYBOOK.md) -- Beginner-friendly step-by-step guide
+- [docs/openapi.yaml](./docs/openapi.yaml) -- OpenAPI 3.1 specification (38 endpoints)
 
 ## API Endpoints (38 routes)
 
