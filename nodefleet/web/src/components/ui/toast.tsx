@@ -12,6 +12,21 @@ interface Toast {
   duration?: number;
 }
 
+interface ToastContextValue {
+  showToast: (message: string, type?: ToastType, duration?: number) => string;
+  removeToast: (id: string) => void;
+}
+
+const ToastContext = React.createContext<ToastContextValue | null>(null);
+
+export function useToast() {
+  const context = React.useContext(ToastContext);
+  if (!context) {
+    throw new Error("useToast must be used within a ToastProvider");
+  }
+  return context;
+}
+
 const toastConfig = {
   default: {
     bg: "bg-slate-900 border-slate-800",
@@ -39,31 +54,6 @@ const toastConfig = {
     icon: Info,
   },
 };
-
-export function useToast() {
-  const [toasts, setToasts] = React.useState<Toast[]>([]);
-
-  const showToast = (message: string, type: ToastType = "default", duration = 4000) => {
-    const id = Math.random().toString(36).substr(2, 9);
-    const newToast: Toast = { id, message, type, duration };
-
-    setToasts((prev) => [...prev, newToast]);
-
-    if (duration > 0) {
-      setTimeout(() => {
-        removeToast(id);
-      }, duration);
-    }
-
-    return id;
-  };
-
-  const removeToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
-
-  return { toasts, showToast, removeToast };
-}
 
 interface ToastContainerProps {
   toasts: Toast[];
@@ -101,12 +91,39 @@ export function ToastContainer({ toasts, onRemove }: ToastContainerProps) {
 
 // Provider component for global toast support
 export function ToastProvider({ children }: { children: React.ReactNode }) {
-  const { toasts, removeToast } = useToast();
+  const [toasts, setToasts] = React.useState<Toast[]>([]);
+
+  const showToast = React.useCallback(
+    (message: string, type: ToastType = "default", duration = 4000) => {
+      const id = Math.random().toString(36).substr(2, 9);
+      const newToast: Toast = { id, message, type, duration };
+
+      setToasts((prev) => [...prev, newToast]);
+
+      if (duration > 0) {
+        setTimeout(() => {
+          removeToast(id);
+        }, duration);
+      }
+
+      return id;
+    },
+    []
+  );
+
+  const removeToast = React.useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const contextValue = React.useMemo(
+    () => ({ showToast, removeToast }),
+    [showToast, removeToast]
+  );
 
   return (
-    <>
+    <ToastContext.Provider value={contextValue}>
       {children}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
-    </>
+    </ToastContext.Provider>
   );
 }

@@ -43,6 +43,41 @@ This document describes the system architecture, service topology, data flows, a
                           WSS :8081 / UDP :5555
 ```
 
+### Architecture Diagram (Mermaid)
+
+```mermaid
+graph TB
+    Browser[Browser / Dashboard]
+    ESP32[ESP32 Device]
+
+    Browser -->|HTTP/WSS| Nginx
+    ESP32 -->|WebSocket| Nginx
+    ESP32 -->|MQTT| MQTT[Mosquitto Broker]
+
+    subgraph Docker[Docker Compose Stack]
+        Nginx[Nginx Reverse Proxy]
+        Web[Next.js 14 Web App]
+        WS[WebSocket Server]
+        MQTT
+        PG[(PostgreSQL 16)]
+        Redis[(Redis 7)]
+        MinIO[(MinIO S3)]
+        Prometheus[Prometheus]
+        Grafana[Grafana]
+    end
+
+    Nginx -->|/api/*| Web
+    Nginx -->|/device, /dashboard| WS
+    Web --> PG
+    Web --> Redis
+    Web --> MinIO
+    WS --> PG
+    WS --> Redis
+    Prometheus --> Web
+    Prometheus --> WS
+    Grafana --> Prometheus
+```
+
 Data flows:
 
 - The **Browser** connects to **Nginx**, which routes HTTP traffic to the **Web App** and WebSocket upgrade requests to the **WS Server**.

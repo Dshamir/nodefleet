@@ -85,6 +85,7 @@ export function Sidebar({ user }: SidebarProps) {
 
       {/* Sidebar */}
       <aside
+        role="navigation"
         className={`fixed left-0 top-0 h-screen w-64 bg-slate-950 border-r border-slate-800 flex flex-col transition-transform duration-200 z-40 lg:z-0 lg:relative lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}
@@ -98,7 +99,7 @@ export function Sidebar({ user }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-8 space-y-2 overflow-y-auto">
+        <nav aria-label="Main navigation" className="flex-1 px-4 py-8 space-y-2 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = isActive(item.href);
@@ -108,6 +109,7 @@ export function Sidebar({ user }: SidebarProps) {
                 key={item.label}
                 href={item.href}
                 onClick={() => setIsOpen(false)}
+                aria-current={active ? "page" : undefined}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
                   active
                     ? "bg-primary/20 text-primary border border-primary/30"

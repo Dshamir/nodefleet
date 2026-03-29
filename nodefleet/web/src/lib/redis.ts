@@ -1,4 +1,7 @@
 import Redis from 'ioredis'
+import { createLogger } from './logger'
+
+const logger = createLogger('redis')
 
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
@@ -7,15 +10,15 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
 
 // Handle connection events
 redis.on('error', (err) => {
-  console.error('Redis error:', err)
+  logger.error('Redis error', { error: String(err) })
 })
 
 redis.on('connect', () => {
-  console.log('Connected to Redis')
+  logger.info('Connected to Redis')
 })
 
 redis.on('ready', () => {
-  console.log('Redis is ready')
+  logger.info('Redis is ready')
 })
 
 // Create a pub/sub instance
@@ -26,7 +29,7 @@ export async function publishEvent(channel: string, data: unknown): Promise<numb
     const message = JSON.stringify(data)
     return await redis.publish(channel, message)
   } catch (error) {
-    console.error(`Failed to publish to ${channel}:`, error)
+    logger.error(`Failed to publish to ${channel}`, { error: String(error) })
     throw error
   }
 }
@@ -38,7 +41,7 @@ export async function subscribeToChannel(
   try {
     pubsub.subscribe(channel, (err) => {
       if (err) {
-        console.error(`Failed to subscribe to ${channel}:`, err)
+        logger.error(`Failed to subscribe to ${channel}`, { error: String(err) })
         throw err
       }
     })
@@ -49,12 +52,12 @@ export async function subscribeToChannel(
           const data = JSON.parse(message)
           callback(data)
         } catch (error) {
-          console.error('Failed to parse message:', error)
+          logger.error('Failed to parse message', { error: String(error) })
         }
       }
     })
   } catch (error) {
-    console.error(`Subscription error for ${channel}:`, error)
+    logger.error(`Subscription error for ${channel}`, { error: String(error) })
     throw error
   }
 }
@@ -63,7 +66,7 @@ export async function unsubscribeFromChannel(channel: string): Promise<void> {
   try {
     await pubsub.unsubscribe(channel)
   } catch (error) {
-    console.error(`Failed to unsubscribe from ${channel}:`, error)
+    logger.error(`Failed to unsubscribe from ${channel}`, { error: String(error) })
     throw error
   }
 }
@@ -81,7 +84,7 @@ export async function setCacheValue(
       await redis.set(key, serialized)
     }
   } catch (error) {
-    console.error(`Failed to set cache value for ${key}:`, error)
+    logger.error(`Failed to set cache value for ${key}`, { error: String(error) })
     throw error
   }
 }
@@ -92,7 +95,7 @@ export async function getCacheValue(key: string): Promise<unknown | null> {
     if (!value) return null
     return JSON.parse(value)
   } catch (error) {
-    console.error(`Failed to get cache value for ${key}:`, error)
+    logger.error(`Failed to get cache value for ${key}`, { error: String(error) })
     return null
   }
 }
@@ -101,7 +104,7 @@ export async function deleteCacheValue(key: string): Promise<void> {
   try {
     await redis.del(key)
   } catch (error) {
-    console.error(`Failed to delete cache value for ${key}:`, error)
+    logger.error(`Failed to delete cache value for ${key}`, { error: String(error) })
     throw error
   }
 }
@@ -113,7 +116,7 @@ export async function clearCache(pattern: string): Promise<void> {
       await redis.del(...keys)
     }
   } catch (error) {
-    console.error(`Failed to clear cache with pattern ${pattern}:`, error)
+    logger.error(`Failed to clear cache with pattern ${pattern}`, { error: String(error) })
     throw error
   }
 }

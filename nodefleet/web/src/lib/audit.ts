@@ -1,5 +1,8 @@
 import { db } from './db'
 import { auditLogs } from './db/schema'
+import { createLogger } from './logger'
+
+const logger = createLogger('audit')
 
 type AuditAction =
   | 'device_created'
@@ -46,6 +49,6 @@ export async function logAudit(opts: AuditOptions): Promise<void> {
       ipAddress: opts.ipAddress || null,
     })
   } catch (error) {
-    console.error('Failed to write audit log:', error)
+    logger.error('Failed to write audit log', { error: String(error) })
   }
 }

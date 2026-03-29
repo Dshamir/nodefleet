@@ -5,12 +5,28 @@ import { NextResponse } from 'next/server'
 const publicRoutes = ['/login', '/register', '/forgot-password', '/api/auth']
 const protectedRoutes = ['/devices', '/settings', '/content', '/map', '/schedules', '/api/protected']
 
+const allowedOrigin = process.env.CORS_ORIGIN || '*'
+
+function setCorsHeaders(response: NextResponse): NextResponse {
+  response.headers.set('Access-Control-Allow-Origin', allowedOrigin)
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS')
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+  return response
+}
+
 const { auth } = NextAuth(authConfig)
 
 export default auth((req) => {
   const isAuthenticated = !!req.auth?.user
 
   const pathname = req.nextUrl.pathname
+  const isApiRoute = pathname.startsWith('/api/')
+
+  // Handle CORS preflight requests for API routes
+  if (isApiRoute && req.method === 'OPTIONS') {
+    const preflightResponse = new NextResponse(null, { status: 204 })
+    return setCorsHeaders(preflightResponse)
+  }
 
   // Check if route is public
   const isPublicRoute = publicRoutes.some((route) => {
@@ -34,7 +50,8 @@ export default auth((req) => {
     if (isAuthenticated && (pathname === '/login' || pathname === '/register')) {
       return NextResponse.redirect(new URL('/devices', req.nextUrl.origin))
     }
-    return NextResponse.next()
+    const response = NextResponse.next()
+    return isApiRoute ? setCorsHeaders(response) : response
   }
 
   // Protect dashboard and other protected routes
@@ -44,11 +61,13 @@ export default auth((req) => {
       loginUrl.searchParams.set('callbackUrl', pathname)
       return NextResponse.redirect(loginUrl)
     }
-    return NextResponse.next()
+    const response = NextResponse.next()
+    return isApiRoute ? setCorsHeaders(response) : response
   }
 
   // Allow all other routes
-  return NextResponse.next()
+  const response = NextResponse.next()
+  return isApiRoute ? setCorsHeaders(response) : response
 })
 
 export const config = {

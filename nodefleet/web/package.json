@@ -9,7 +9,11 @@
     "lint": "eslint . --ext .ts,.tsx",
     "db:push": "drizzle-kit push:pg",
     "db:generate": "drizzle-kit generate:pg",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^0.2.0",
@@ -50,15 +54,20 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.6",
     "@types/node": "^20.10.0",
     "@types/pg": "^8.11.0",
     "@types/react": "^18.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
     "dotenv": "^16.3.0",
     "drizzle-kit": "^0.20.0",
     "eslint": "^8.55.0",
     "eslint-config-next": "^14.0.0",
-    "typescript": "^5.3.0"
+    "jsdom": "^29.0.1",
+    "typescript": "^5.3.0",
+    "vitest": "^4.1.2"
   }
 }

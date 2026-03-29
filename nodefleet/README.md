@@ -162,6 +162,9 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) -- Known issues, gaps, and recommendations
 - [recommendation-report.md](./recommendation-report.md) -- 15-dimension firmware/hardware gap analysis
 - [GAP-ANALYSIS-SCORECARD.md](./GAP-ANALYSIS-SCORECARD.md) -- 25-dimension full-stack gap analysis (infrastructure, applications, UI/UX, documentation)
+- [docs/runbooks/INCIDENT_RESPONSE.md](./docs/runbooks/INCIDENT_RESPONSE.md) -- Incident response procedures
+- [docs/runbooks/DATABASE_MAINTENANCE.md](./docs/runbooks/DATABASE_MAINTENANCE.md) -- Database maintenance guide
+- [docs/runbooks/ROLLBACK.md](./docs/runbooks/ROLLBACK.md) -- Service and firmware rollback procedures
 
 ## API Endpoints (38 routes)
 
