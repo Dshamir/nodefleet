@@ -114,7 +114,7 @@ export async function GET() {
           name: devices.name,
           hwModel: devices.hwModel,
           status: devices.status,
-          ipAddress: devices.ipAddress,
+          lastIp: devices.lastIp,
           lastHeartbeatAt: devices.lastHeartbeatAt,
         })
         .from(devices)
@@ -124,7 +124,7 @@ export async function GET() {
         if (seenDeviceIds.has(d.id)) continue; // dedup — already found via WS or UDP
         seenDeviceIds.add(d.id);
         allDevices.push({
-          ip: d.ipAddress || 'unknown',
+          ip: d.lastIp || 'unknown',
           port: 0,
           deviceId: d.id,
           name: d.name,

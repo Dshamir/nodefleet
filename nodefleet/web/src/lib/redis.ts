@@ -3,9 +3,13 @@ import { createLogger } from './logger'
 
 const logger = createLogger('redis')
 
+const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || !process.env.REDIS_URL
+
 const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  lazyConnect: isBuildTime,
+  retryStrategy: isBuildTime ? () => null : undefined,
 })
 
 // Handle connection events
