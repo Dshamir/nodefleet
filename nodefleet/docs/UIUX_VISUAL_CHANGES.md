@@ -22,6 +22,7 @@
 13. [Responsive Map Container](#13-responsive-map-container)
 14. [Responsive Table Text](#14-responsive-table-text)
 15. [Light Theme Foundation](#15-light-theme-foundation)
+16. [Multi-Protocol Network Scanner](#16-multi-protocol-network-scanner)
 
 ---
 
@@ -445,5 +446,32 @@ The entire application was **dark mode only** with hardcoded dark color values t
 | **Empty States** | 3 CTA buttons added | No more dead ends when content is missing |
 | **Responsiveness** | Map container, Table text | Proper scaling on mobile through large displays |
 | **Theming** | Light theme CSS variables | Foundation for theme switching without refactoring |
+| **Device Discovery** | Multi-protocol network scanner | Devices found instantly via 3 redundant protocols |
 
-**Total: 15 distinct UI/UX improvements across 18+ files.**
+**Total: 16 distinct UI/UX improvements across 20+ files.**
+
+---
+
+## 16. Multi-Protocol Network Scanner
+
+**Before:** Clicking "Scan Network" only sent a UDP broadcast on port 5556. Connected devices communicate via WebSocket, so the scanner always returned "No devices found" even with an online device sending heartbeats.
+
+**After:** The scanner now uses 3 redundant discovery protocols with deduplication:
+1. **WebSocket** (green badge) — Queries the ws-server `/devices` endpoint for live connections. Most reliable for active devices.
+2. **UDP Broadcast** (blue badge) — Scans LAN on port 5556 for unpaired ESP32 devices. Zero-config discovery.
+3. **Database** (yellow badge) — Queries PostgreSQL for devices with `status='online'`. Fallback for any devices missed by the other protocols.
+
+**What the user sees:**
+- "1 device found" banner with protocol count breakdown ("1 via WebSocket")
+- Each device shows: name/ID, device ID in monospace, last heartbeat timestamp
+- Color-coded protocol badge per device (green=WebSocket, blue=UDP, yellow=Database)
+- "Live" status badge for WebSocket-connected devices
+- Initial state shows all 3 protocols with icons and descriptions
+- Scanning animation says "Scanning 3 protocols: WebSocket, UDP broadcast, Database..."
+
+**Visual description:** Each discovered device appears in a dark card (`bg-slate-800/50`) with the device name on the left, protocol badge on the right. WebSocket devices get a green Zap icon badge and a "Live" outline badge. Database-only devices show a yellow warning note. Protocol breakdown badges appear between the service status and device list.
+
+**Files:**
+- `web/src/components/dashboard/network-scanner.tsx` — Complete rewrite with multi-protocol UI
+- `web/src/app/api/discovery/route.ts` — 3-protocol scan with deduplication
+- `ws-server/src/index.ts` — Added `/devices` HTTP endpoint

@@ -1,10 +1,27 @@
 # NodeFleet - Known Issues, Gaps & Recommendations
 
-Last updated: 2026-03-28 (evening)
+Last updated: 2026-03-29
 
 ---
 
 ## Resolved Issues
+
+### 0. Network Discovery Showed "No Devices Found" Despite Online Device — RESOLVED
+
+**Status:** Fixed (2026-03-29)
+
+**Root cause:** The network scanner only used UDP broadcast on port 5556. Connected devices communicate via WebSocket, not UDP — they were invisible to the scanner even when online and sending heartbeats.
+
+**Fix:** Implemented 3-protocol redundant discovery:
+1. **WebSocket** — Added `/devices` HTTP endpoint to ws-server returning connected devices from in-memory Map
+2. **UDP Broadcast** — Existing LAN scan on port 5556 for unpaired ESP32 devices
+3. **Database** — Fallback query for devices with `status='online'` in PostgreSQL
+
+Results are deduplicated by deviceId. Scanner UI now shows protocol badges (WebSocket=green, UDP=blue, Database=yellow) with per-protocol count breakdown. Also fixed `ipAddress` → `lastIp` column reference and Redis `lazyConnect` during Next.js build.
+
+**Verified:** `kimera` device (`6a9da513`) discovered via WebSocket protocol with live heartbeat.
+
+---
 
 ### 1. Camera Init Crashed ESP32 (WDT Reset) — RESOLVED
 
