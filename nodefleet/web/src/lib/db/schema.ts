@@ -1279,3 +1279,171 @@ export const inventoryMovements = pgTable('inventory_movements', {
   createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ============================================================================
+// CRM — Contacts
+// ============================================================================
+
+export const contactStatusEnum = pgEnum('contact_status', [
+  'new', 'contacted', 'qualified', 'converted', 'lost',
+]);
+
+export const contacts = pgTable(
+  'contacts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    email: varchar('email', { length: 255 }).notNull(),
+    name: varchar('name', { length: 255 }),
+    phone: varchar('phone', { length: 50 }),
+    company: varchar('company', { length: 255 }),
+    title: varchar('title', { length: 255 }),
+    source: varchar('source', { length: 100 }),
+    status: contactStatusEnum('status').notNull().default('new'),
+    assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+    tags: jsonb('tags'),
+    customFields: jsonb('custom_fields'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('contacts_org_id_idx').on(t.orgId),
+    emailIdx: index('contacts_email_idx').on(t.email),
+  })
+);
+
+export type Contact = InferSelectModel<typeof contacts>;
+export type InsertContact = InferInsertModel<typeof contacts>;
+
+export const contactNotes = pgTable('contact_notes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contactId: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'cascade' }),
+  content: text('content').notNull(),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const contactActivityTypeEnum = pgEnum('contact_activity_type', [
+  'email', 'call', 'meeting', 'note',
+]);
+
+export const contactActivities = pgTable('contact_activities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  contactId: uuid('contact_id').notNull().references(() => contacts.id, { onDelete: 'cascade' }),
+  type: contactActivityTypeEnum('type').notNull(),
+  subject: varchar('subject', { length: 255 }),
+  description: text('description'),
+  scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// CRM — Leads
+// ============================================================================
+
+export const leadStatusEnum = pgEnum('lead_status', [
+  'new', 'contacted', 'qualified', 'proposal', 'negotiation', 'won', 'lost',
+]);
+
+export const leads = pgTable(
+  'leads',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    contactId: uuid('contact_id').references(() => contacts.id, { onDelete: 'set null' }),
+    source: varchar('source', { length: 100 }),
+    status: leadStatusEnum('status').notNull().default('new'),
+    value: integer('value'), // deal value in cents
+    probability: integer('probability'), // 0-100
+    expectedCloseDate: timestamp('expected_close_date', { withTimezone: true }),
+    assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('leads_org_id_idx').on(t.orgId),
+    statusIdx: index('leads_status_idx').on(t.status),
+  })
+);
+
+export type Lead = InferSelectModel<typeof leads>;
+export type InsertLead = InferInsertModel<typeof leads>;
+
+// ============================================================================
+// CRM — Lead Forms
+// ============================================================================
+
+export const leadForms = pgTable('lead_forms', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 255 }).notNull(),
+  fields: jsonb('fields').notNull(), // array of { name, type, label, required }
+  redirectUrl: varchar('redirect_url', { length: 500 }),
+  active: boolean('active').notNull().default(true),
+  submissions: integer('submissions').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const leadFormSubmissions = pgTable('lead_form_submissions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  formId: uuid('form_id').notNull().references(() => leadForms.id, { onDelete: 'cascade' }),
+  data: jsonb('data').notNull(),
+  ip: varchar('ip', { length: 45 }),
+  userAgent: text('user_agent'),
+  convertedLeadId: uuid('converted_lead_id').references(() => leads.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Marketing — Campaigns
+// ============================================================================
+
+export const campaignStatusEnum = pgEnum('campaign_status', [
+  'draft', 'scheduled', 'active', 'paused', 'completed',
+]);
+
+export const campaignTypeEnum = pgEnum('campaign_type', ['email', 'sms', 'push']);
+
+export const campaigns = pgTable(
+  'campaigns',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    type: campaignTypeEnum('type').notNull().default('email'),
+    status: campaignStatusEnum('status').notNull().default('draft'),
+    subject: varchar('subject', { length: 255 }),
+    content: text('content'),
+    audience: jsonb('audience'), // filter criteria
+    scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    stats: jsonb('stats'), // { sent, opened, clicked, bounced, unsubscribed }
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('campaigns_org_id_idx').on(t.orgId),
+  })
+);
+
+export type Campaign = InferSelectModel<typeof campaigns>;
+export type InsertCampaign = InferInsertModel<typeof campaigns>;
+
+// ============================================================================
+// CRM — Lead Scoring
+// ============================================================================
+
+export const leadScoringRules = pgTable('lead_scoring_rules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  condition: jsonb('condition').notNull(), // { field, operator, value }
+  points: integer('points').notNull(),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
