@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withAuth, type AuthContext } from '@/lib/with-auth'
 import { db } from '@/lib/db'
-import { products, inventoryMovements } from '@/lib/db/schema'
+import { products } from '@/lib/db/schema'
 import { eq, desc, sql } from 'drizzle-orm'
 
 export const GET = withAuth(async (request: NextRequest, ctx: AuthContext) => {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { withAuth, type AuthContext } from '@/lib/with-auth'
 import { db } from '@/lib/db'
 import { invoices } from '@/lib/db/schema'
-import { eq, desc, and, sql } from 'drizzle-orm'
+import { eq, desc, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 const createInvoiceSchema = z.object({
