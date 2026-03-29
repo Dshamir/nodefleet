@@ -17,7 +17,7 @@ export default async function PlatformAdminLayout({
   }
 
   // Check platform_admin role — either user.role === 'admin' or in platformAdmins table
-  const isAdmin = session.user.role === "admin";
+  const isAdmin = (session.user as any).userRole === "admin";
   if (!isAdmin) {
     const [adminRecord] = await db
       .select()

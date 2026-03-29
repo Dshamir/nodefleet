@@ -65,7 +65,7 @@ export function withAuth(handler: AuthenticatedHandler, options: WithAuthOptions
         )
       }
 
-      const role = (session.user.role === 'admin' ? 'platform_admin' : membership.role) as Role
+      const role = ((session.user as any).userRole === 'admin' ? 'platform_admin' : membership.role) as Role
 
       // Authorize via ReBAC
       if (!hasPermission(role, options.resource, options.action)) {
@@ -131,7 +131,7 @@ export function withAuthOnly(handler: AuthenticatedHandler) {
         )
       }
 
-      const role = (session.user.role === 'admin' ? 'platform_admin' : membership.role) as Role
+      const role = ((session.user as any).userRole === 'admin' ? 'platform_admin' : membership.role) as Role
 
       return handler(request, {
         userId: session.user.id,

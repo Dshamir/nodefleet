@@ -96,11 +96,12 @@ const fullAuthConfig = {
             token.name = dbUser.name
             token.email = dbUser.email
             token.image = dbUser.image
+            token.userRole = dbUser.role // global user role (user/admin)
 
             if (dbUser.orgMembers && dbUser.orgMembers.length > 0) {
               const primaryMembership = dbUser.orgMembers[0]
               token.orgId = primaryMembership.orgId
-              token.role = primaryMembership.role
+              token.role = primaryMembership.role // org membership role
             }
           }
         } catch (error) {
@@ -118,6 +119,7 @@ const fullAuthConfig = {
         session.user.image = token.image as string
         session.user.orgId = token.orgId as string | undefined
         session.user.role = token.role as string | undefined
+        session.user.userRole = token.userRole as string | undefined
       }
 
       return session
