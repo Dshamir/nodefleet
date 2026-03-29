@@ -939,3 +939,343 @@ export const notifications = pgTable(
 
 export type Notification = InferSelectModel<typeof notifications>;
 export type InsertNotification = InferInsertModel<typeof notifications>;
+
+// ============================================================================
+// Commerce — Products & Catalog
+// ============================================================================
+
+export const productStatusEnum = pgEnum('product_status', ['active', 'draft', 'archived']);
+
+export const productCategories = pgTable('product_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 255 }).notNull(),
+  parentId: uuid('parent_id'),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const products = pgTable(
+  'products',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }).notNull(),
+    description: text('description'),
+    sku: varchar('sku', { length: 100 }),
+    price: integer('price').notNull().default(0), // cents
+    compareAtPrice: integer('compare_at_price'),
+    currency: varchar('currency', { length: 3 }).notNull().default('USD'),
+    categoryId: uuid('category_id').references(() => productCategories.id, { onDelete: 'set null' }),
+    images: jsonb('images'), // string[]
+    status: productStatusEnum('status').notNull().default('draft'),
+    stockQuantity: integer('stock_quantity').notNull().default(0),
+    trackInventory: boolean('track_inventory').notNull().default(true),
+    weight: real('weight'),
+    dimensions: jsonb('dimensions'), // { length, width, height }
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('products_org_id_idx').on(t.orgId),
+    slugIdx: index('products_slug_idx').on(t.slug),
+  })
+);
+
+export type Product = InferSelectModel<typeof products>;
+export type InsertProduct = InferInsertModel<typeof products>;
+
+export const productVariants = pgTable('product_variants', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  sku: varchar('sku', { length: 100 }),
+  price: integer('price').notNull().default(0),
+  stockQuantity: integer('stock_quantity').notNull().default(0),
+  options: jsonb('options'), // { color: 'red', size: 'L' }
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Commerce — Customers
+// ============================================================================
+
+export const customers = pgTable(
+  'customers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    email: varchar('email', { length: 255 }).notNull(),
+    name: varchar('name', { length: 255 }),
+    phone: varchar('phone', { length: 50 }),
+    company: varchar('company', { length: 255 }),
+    address: jsonb('address'), // { street, city, state, zip, country }
+    totalOrders: integer('total_orders').notNull().default(0),
+    totalSpent: integer('total_spent').notNull().default(0), // cents
+    tags: jsonb('tags'), // string[]
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('customers_org_id_idx').on(t.orgId),
+    emailIdx: index('customers_email_idx').on(t.email),
+  })
+);
+
+export type Customer = InferSelectModel<typeof customers>;
+export type InsertCustomer = InferInsertModel<typeof customers>;
+
+// ============================================================================
+// Commerce — Orders
+// ============================================================================
+
+export const orderStatusEnum = pgEnum('order_status', [
+  'pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'refunded',
+]);
+
+export const orders = pgTable(
+  'orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+    orderNumber: varchar('order_number', { length: 50 }).notNull(),
+    status: orderStatusEnum('status').notNull().default('pending'),
+    subtotal: integer('subtotal').notNull().default(0),
+    taxAmount: integer('tax_amount').notNull().default(0),
+    shippingAmount: integer('shipping_amount').notNull().default(0),
+    discountAmount: integer('discount_amount').notNull().default(0),
+    total: integer('total').notNull().default(0),
+    currency: varchar('currency', { length: 3 }).notNull().default('USD'),
+    shippingAddress: jsonb('shipping_address'),
+    billingAddress: jsonb('billing_address'),
+    notes: text('notes'),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('orders_org_id_idx').on(t.orgId),
+    numberIdx: index('orders_number_idx').on(t.orderNumber),
+  })
+);
+
+export type Order = InferSelectModel<typeof orders>;
+export type InsertOrder = InferInsertModel<typeof orders>;
+
+export const orderItems = pgTable('order_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  productId: uuid('product_id').references(() => products.id, { onDelete: 'set null' }),
+  variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'set null' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  sku: varchar('sku', { length: 100 }),
+  quantity: integer('quantity').notNull().default(1),
+  unitPrice: integer('unit_price').notNull().default(0),
+  totalPrice: integer('total_price').notNull().default(0),
+  metadata: jsonb('metadata'),
+});
+
+export const orderStatusHistory = pgTable('order_status_history', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  status: orderStatusEnum('status').notNull(),
+  note: text('note'),
+  changedBy: uuid('changed_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Commerce — Payments & Invoices
+// ============================================================================
+
+export const paymentStatusEnum = pgEnum('payment_status', [
+  'pending', 'succeeded', 'failed', 'refunded',
+]);
+
+export const payments = pgTable('payments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  stripePaymentIntentId: varchar('stripe_payment_intent_id', { length: 255 }),
+  amount: integer('amount').notNull().default(0),
+  currency: varchar('currency', { length: 3 }).notNull().default('USD'),
+  status: paymentStatusEnum('status').notNull().default('pending'),
+  method: varchar('method', { length: 50 }),
+  metadata: jsonb('metadata'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const refunds = pgTable('refunds', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  paymentId: uuid('payment_id').notNull().references(() => payments.id, { onDelete: 'cascade' }),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  amount: integer('amount').notNull(),
+  reason: text('reason'),
+  status: varchar('status', { length: 50 }).notNull().default('pending'),
+  stripeRefundId: varchar('stripe_refund_id', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const invoiceStatusEnum = pgEnum('invoice_status', [
+  'draft', 'sent', 'paid', 'overdue', 'cancelled',
+]);
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
+    customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+    invoiceNumber: varchar('invoice_number', { length: 50 }).notNull(),
+    status: invoiceStatusEnum('status').notNull().default('draft'),
+    subtotal: integer('subtotal').notNull().default(0),
+    taxAmount: integer('tax_amount').notNull().default(0),
+    total: integer('total').notNull().default(0),
+    currency: varchar('currency', { length: 3 }).notNull().default('USD'),
+    dueDate: timestamp('due_date', { withTimezone: true }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    lineItems: jsonb('line_items'), // array of { description, quantity, unitPrice, total }
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('invoices_org_id_idx').on(t.orgId),
+  })
+);
+
+export type Invoice = InferSelectModel<typeof invoices>;
+export type InsertInvoice = InferInsertModel<typeof invoices>;
+
+// ============================================================================
+// Commerce — Shipping
+// ============================================================================
+
+export const shippingMethods = pgTable('shipping_methods', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  carrier: varchar('carrier', { length: 100 }),
+  estimatedDays: integer('estimated_days'),
+  price: integer('price').notNull().default(0),
+  freeAbove: integer('free_above'), // free shipping above this amount
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const shipmentStatusEnum = pgEnum('shipment_status', [
+  'pending', 'shipped', 'in_transit', 'delivered',
+]);
+
+export const shipments = pgTable('shipments', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  shippingMethodId: uuid('shipping_method_id').references(() => shippingMethods.id, { onDelete: 'set null' }),
+  trackingNumber: varchar('tracking_number', { length: 255 }),
+  carrier: varchar('carrier', { length: 100 }),
+  status: shipmentStatusEnum('status').notNull().default('pending'),
+  shippedAt: timestamp('shipped_at', { withTimezone: true }),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Commerce — Tax
+// ============================================================================
+
+export const taxRates = pgTable('tax_rates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  region: varchar('region', { length: 100 }),
+  rate: real('rate').notNull(), // e.g., 0.13 for 13%
+  type: varchar('type', { length: 20 }).notNull().default('exclusive'), // inclusive or exclusive
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const taxExemptions = pgTable('tax_exemptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'cascade' }),
+  reason: text('reason'),
+  certificateNumber: varchar('certificate_number', { length: 100 }),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Commerce — Promo Codes
+// ============================================================================
+
+export const promoTypeEnum = pgEnum('promo_type', ['percentage', 'fixed', 'free_shipping']);
+
+export const promoCodes = pgTable(
+  'promo_codes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    code: varchar('code', { length: 50 }).notNull(),
+    type: promoTypeEnum('type').notNull(),
+    value: integer('value').notNull(), // percentage (0-100) or fixed amount in cents
+    minOrderAmount: integer('min_order_amount'),
+    maxUses: integer('max_uses'),
+    usedCount: integer('used_count').notNull().default(0),
+    startsAt: timestamp('starts_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    enabled: boolean('enabled').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    codeIdx: uniqueIndex('promo_codes_code_idx').on(t.code),
+  })
+);
+
+export type PromoCode = InferSelectModel<typeof promoCodes>;
+export type InsertPromoCode = InferInsertModel<typeof promoCodes>;
+
+// ============================================================================
+// Commerce — Cart
+// ============================================================================
+
+export const carts = pgTable('carts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+  sessionId: varchar('session_id', { length: 255 }),
+  items: jsonb('items'), // array of { productId, variantId, quantity, price }
+  subtotal: integer('subtotal').notNull().default(0),
+  abandonedAt: timestamp('abandoned_at', { withTimezone: true }),
+  recoveryEmailSentAt: timestamp('recovery_email_sent_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Commerce — Inventory
+// ============================================================================
+
+export const inventoryMovementTypeEnum = pgEnum('inventory_movement_type', ['in', 'out', 'adjustment']);
+
+export const inventoryMovements = pgTable('inventory_movements', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'set null' }),
+  type: inventoryMovementTypeEnum('type').notNull(),
+  quantity: integer('quantity').notNull(),
+  reason: varchar('reason', { length: 255 }),
+  reference: varchar('reference', { length: 255 }), // order ID, PO number, etc.
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
