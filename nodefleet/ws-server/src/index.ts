@@ -147,6 +147,17 @@ class NodeFleetWSServer {
       if (req.url === '/health') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ status: 'ok' }));
+      } else if (req.url === '/devices') {
+        // Return all currently connected devices for discovery/monitoring
+        const connectedDevices = Array.from(this.devices.entries()).map(([key, info]) => ({
+          deviceId: info.deviceId,
+          orgId: info.orgId || null,
+          connectedSince: info.lastHeartbeat ? new Date(info.lastHeartbeat).toISOString() : null,
+          lastHeartbeat: info.lastHeartbeat ? new Date(info.lastHeartbeat).toISOString() : null,
+          protocol: 'websocket',
+        }));
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ devices: connectedDevices, count: connectedDevices.length }));
       } else {
         res.writeHead(404);
         res.end();
