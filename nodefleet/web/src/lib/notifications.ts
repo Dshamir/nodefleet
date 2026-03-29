@@ -102,7 +102,7 @@ export async function getUserNotifications(
  * Mark a notification as read.
  */
 export async function markNotificationRead(id: string, userId: string): Promise<boolean> {
-  const result = await db
+  await db
     .update(notifications)
     .set({ read: true, readAt: new Date() })
     .where(and(eq(notifications.id, id), eq(notifications.userId, userId)))

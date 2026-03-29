@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from './auth'
 import { db } from './db'
 import { orgMembers } from './db/schema'
-import { eq, and } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { hasPermission, type Resource, type Action, type Role } from './rbac'
 import { createLogger } from './logger'
-import { createErrorResponse, ErrorCode } from './errors'
+import { ErrorCode } from './errors'
 
 const logger = createLogger('with-auth')
 
@@ -41,7 +41,7 @@ export function withAuth(handler: AuthenticatedHandler, options: WithAuthOptions
       const session = await auth()
       if (!session?.user?.id) {
         return NextResponse.json(
-          createErrorResponse(ErrorCode.AUTH_REQUIRED, 'Authentication required'),
+          { error: { code: ErrorCode.AUTH_SESSION_EXPIRED, message: 'Authentication required' } },
           { status: 401 }
         )
       }
@@ -60,7 +60,7 @@ export function withAuth(handler: AuthenticatedHandler, options: WithAuthOptions
 
       if (!membership) {
         return NextResponse.json(
-          createErrorResponse(ErrorCode.AUTH_REQUIRED, 'No organization membership found'),
+          { error: { code: ErrorCode.AUTH_INSUFFICIENT_PERMISSIONS, message: 'No organization membership found' } },
           { status: 403 }
         )
       }
@@ -77,10 +77,7 @@ export function withAuth(handler: AuthenticatedHandler, options: WithAuthOptions
           action: options.action,
         })
         return NextResponse.json(
-          createErrorResponse(
-            ErrorCode.AUTH_INSUFFICIENT_PERMISSIONS,
-            `Insufficient permissions: ${options.resource}:${options.action} requires higher role`
-          ),
+          { error: { code: ErrorCode.AUTH_INSUFFICIENT_PERMISSIONS, message: `Insufficient permissions: ${options.resource}:${options.action} requires higher role` } },
           { status: 403 }
         )
       }
@@ -96,7 +93,7 @@ export function withAuth(handler: AuthenticatedHandler, options: WithAuthOptions
     } catch (error) {
       logger.error('Auth wrapper error', { error: String(error) })
       return NextResponse.json(
-        createErrorResponse(ErrorCode.INTERNAL_ERROR, 'Internal server error'),
+        { error: { code: ErrorCode.INTERNAL_ERROR, message: 'Internal server error' } },
         { status: 500 }
       )
     }
@@ -113,7 +110,7 @@ export function withAuthOnly(handler: AuthenticatedHandler) {
       const session = await auth()
       if (!session?.user?.id) {
         return NextResponse.json(
-          createErrorResponse(ErrorCode.AUTH_REQUIRED, 'Authentication required'),
+          { error: { code: ErrorCode.AUTH_SESSION_EXPIRED, message: 'Authentication required' } },
           { status: 401 }
         )
       }
@@ -129,7 +126,7 @@ export function withAuthOnly(handler: AuthenticatedHandler) {
 
       if (!membership) {
         return NextResponse.json(
-          createErrorResponse(ErrorCode.AUTH_REQUIRED, 'No organization membership found'),
+          { error: { code: ErrorCode.AUTH_INSUFFICIENT_PERMISSIONS, message: 'No organization membership found' } },
           { status: 403 }
         )
       }
@@ -146,7 +143,7 @@ export function withAuthOnly(handler: AuthenticatedHandler) {
     } catch (error) {
       logger.error('Auth wrapper error', { error: String(error) })
       return NextResponse.json(
-        createErrorResponse(ErrorCode.INTERNAL_ERROR, 'Internal server error'),
+        { error: { code: ErrorCode.INTERNAL_ERROR, message: 'Internal server error' } },
         { status: 500 }
       )
     }

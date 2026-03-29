@@ -3,7 +3,7 @@ import { withAuthOnly, type AuthContext } from '@/lib/with-auth'
 import { markNotificationRead } from '@/lib/notifications'
 
 export const PUT = withAuthOnly(async (
-  request: NextRequest,
+  _request: NextRequest,
   ctx: AuthContext & { params?: Record<string, string> }
 ) => {
   const id = ctx.params?.id
