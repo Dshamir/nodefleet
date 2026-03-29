@@ -13,18 +13,116 @@ import {
   Menu,
   X,
   Shield,
+  ChevronDown,
+  ShoppingCart,
+  DollarSign,
+  CreditCard,
+  Store,
+  Truck,
+  Factory,
+  Tag,
+  Package,
+  Receipt,
+  FileX2,
+  ShoppingBag,
+  Users,
+  UserCircle,
+  BarChart3,
+  Globe,
+  Megaphone,
+  Target,
+  ClipboardList,
+  TrendingUp,
+  Database,
+  ToggleLeft,
+  Network,
+  Bell,
+  Ticket,
+  Wrench,
+  GitBranch,
+  BookOpen,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
-const navItems = [
-  { label: "Overview", href: "/devices", icon: LayoutDashboard },
-  { label: "Devices", href: "/devices", icon: Cpu },
-  { label: "Content Library", href: "/content", icon: FileText },
-  { label: "Schedules", href: "/schedules", icon: Clock },
-  { label: "Map", href: "/map", icon: Map },
-  { label: "Audit Trail", href: "/audit", icon: Shield },
-  { label: "Settings", href: "/settings", icon: Settings },
+interface NavItem {
+  label: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+interface NavGroup {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  items: NavItem[];
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: "IoT",
+    icon: Cpu,
+    items: [
+      { label: "Overview", href: "/", icon: LayoutDashboard },
+      { label: "Devices", href: "/devices", icon: Cpu },
+      { label: "Content Library", href: "/content", icon: FileText },
+      { label: "Schedules", href: "/schedules", icon: Clock },
+      { label: "Map", href: "/map", icon: Map },
+    ],
+  },
+  {
+    label: "Commerce",
+    icon: ShoppingCart,
+    items: [
+      { label: "Orders", href: "/commerce/orders", icon: ShoppingBag },
+      { label: "Pricing", href: "/commerce/pricing", icon: DollarSign },
+      { label: "Payment Gateways", href: "/commerce/payment-gateways", icon: CreditCard },
+      { label: "Shop", href: "/commerce/shop", icon: Store },
+      { label: "Shipping", href: "/commerce/shipping", icon: Truck },
+      { label: "Manufacturing", href: "/commerce/manufacturing", icon: Factory },
+      { label: "Promo Codes", href: "/commerce/promos", icon: Tag },
+      { label: "Inventory", href: "/commerce/inventory", icon: Package },
+      { label: "Invoices", href: "/commerce/invoices", icon: Receipt },
+      { label: "Tax Exemptions", href: "/commerce/tax", icon: FileX2 },
+      { label: "Cart Recovery", href: "/commerce/cart-recovery", icon: ShoppingCart },
+      { label: "Customers", href: "/commerce/customers", icon: Users },
+      { label: "CRM", href: "/crm", icon: UserCircle },
+    ],
+  },
+  {
+    label: "Ranking",
+    icon: TrendingUp,
+    items: [
+      { label: "Analytics", href: "/analytics", icon: BarChart3 },
+      { label: "SEO Settings", href: "/seo", icon: Globe },
+      { label: "Domain Registry", href: "/domains", icon: Globe },
+      { label: "Leads", href: "/crm/leads", icon: Target },
+      { label: "Lead Forms", href: "/crm/lead-forms", icon: ClipboardList },
+      { label: "Campaigns", href: "/marketing/campaigns", icon: Megaphone },
+      { label: "Lead Scoring", href: "/crm/lead-scoring", icon: TrendingUp },
+    ],
+  },
+  {
+    label: "Operations",
+    icon: Settings,
+    items: [
+      { label: "Database", href: "/operations/database", icon: Database },
+      { label: "Feature Flags", href: "/operations/feature-flags", icon: ToggleLeft },
+      { label: "Network", href: "/operations/network", icon: Network },
+      { label: "Notifications", href: "/operations/notifications", icon: Bell },
+      { label: "Audit Trail", href: "/audit", icon: Shield },
+      { label: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
+  {
+    label: "Development",
+    icon: GitBranch,
+    items: [
+      { label: "Dev Tickets", href: "/dev/tickets", icon: Ticket },
+      { label: "Repair Plans", href: "/dev/repair-plans", icon: Wrench },
+      { label: "Version Control", href: "/dev/version-control", icon: GitBranch },
+      { label: "Dev Wiki", href: "/dev/wiki", icon: BookOpen },
+    ],
+  },
 ];
 
 interface SidebarProps {
@@ -36,12 +134,47 @@ interface SidebarProps {
   };
 }
 
+function getStoredCollapsedState(): Record<string, boolean> {
+  if (typeof window === "undefined") return {};
+  try {
+    const stored = localStorage.getItem("nf-sidebar-collapsed");
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function storeCollapsedState(state: Record<string, boolean>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("nf-sidebar-collapsed", JSON.stringify(state));
+  } catch {}
+}
+
 export function Sidebar({ user }: SidebarProps) {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setCollapsed(getStoredCollapsedState());
+  }, []);
+
+  const toggleGroup = (label: string) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      storeCollapsedState(next);
+      return next;
+    });
+  };
 
   const isActive = (href: string) => {
+    if (href === "/") return pathname === "/";
     return pathname.startsWith(href);
+  };
+
+  const isGroupActive = (group: NavGroup) => {
+    return group.items.some((item) => isActive(item.href));
   };
 
   const handleSignOut = async () => {
@@ -67,11 +200,7 @@ export function Sidebar({ user }: SidebarProps) {
           onClick={() => setIsOpen(!isOpen)}
           className="text-slate-400 hover:text-white"
         >
-          {isOpen ? (
-            <X className="w-6 h-6" />
-          ) : (
-            <Menu className="w-6 h-6" />
-          )}
+          {isOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
         </Button>
       </div>
 
@@ -99,35 +228,73 @@ export function Sidebar({ user }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav aria-label="Main navigation" className="flex-1 px-4 py-8 space-y-2 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
+        <nav
+          aria-label="Main navigation"
+          className="flex-1 px-3 py-4 space-y-1 overflow-y-auto"
+        >
+          {navGroups.map((group) => {
+            const GroupIcon = group.icon;
+            const isCollapsed = collapsed[group.label] ?? false;
+            const groupActive = isGroupActive(group);
 
             return (
-              <Link
-                key={item.label}
-                href={item.href}
-                onClick={() => setIsOpen(false)}
-                aria-current={active ? "page" : undefined}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${
-                  active
-                    ? "bg-primary/20 text-primary border border-primary/30"
-                    : "text-slate-400 hover:text-white hover:bg-slate-900/50"
-                }`}
-              >
-                <Icon className="w-5 h-5 flex-shrink-0" />
-                <span className="font-medium">{item.label}</span>
-              </Link>
+              <div key={group.label}>
+                {/* Group Header */}
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors ${
+                    groupActive
+                      ? "text-primary"
+                      : "text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <GroupIcon className="w-3.5 h-3.5" />
+                    {group.label}
+                  </span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                      isCollapsed ? "-rotate-90" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* Group Items */}
+                {!isCollapsed && (
+                  <div className="ml-2 space-y-0.5">
+                    {group.items.map((item) => {
+                      const Icon = item.icon;
+                      const active = isActive(item.href);
+
+                      return (
+                        <Link
+                          key={item.label}
+                          href={item.href}
+                          onClick={() => setIsOpen(false)}
+                          aria-current={active ? "page" : undefined}
+                          className={`flex items-center gap-2.5 px-3 py-1.5 rounded-md text-sm transition-all ${
+                            active
+                              ? "bg-primary/20 text-primary border border-primary/30"
+                              : "text-slate-400 hover:text-white hover:bg-slate-900/50"
+                          }`}
+                        >
+                          <Icon className="w-4 h-4 flex-shrink-0" />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
 
         {/* User Menu */}
         <div className="border-t border-slate-800 p-4 space-y-3">
-          <div className="px-4 py-3 bg-slate-900/50 rounded-lg">
-            <p className="text-sm text-slate-400 mb-1">Logged in as</p>
-            <p className="text-white font-medium truncate">
+          <div className="px-3 py-2.5 bg-slate-900/50 rounded-lg">
+            <p className="text-xs text-slate-500 mb-0.5">Logged in as</p>
+            <p className="text-white text-sm font-medium truncate">
               {user.name || user.email || "Unknown"}
             </p>
             {user.name && user.email && (
@@ -136,10 +303,10 @@ export function Sidebar({ user }: SidebarProps) {
           </div>
           <Button
             variant="ghost"
-            className="w-full text-slate-400 hover:text-error justify-start"
+            className="w-full text-slate-400 hover:text-error justify-start text-sm"
             onClick={handleSignOut}
           >
-            <LogOut className="w-5 h-5 mr-3" />
+            <LogOut className="w-4 h-4 mr-2" />
             Sign Out
           </Button>
         </div>

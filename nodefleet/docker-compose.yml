@@ -166,6 +166,7 @@ services:
     ports:
       - "50080:80"
       - "50443:443"
+      - "50301:50301"
     networks:
       - nodefleet-net
     healthcheck:
