@@ -1,5 +1,64 @@
 # Changelog
 
+## [2.1.0] - 2026-03-29
+
+### Full Admin Console Release
+
+Complete SaaS admin console adapted from Zenzers patterns with 15 additional modules.
+
+### Added
+
+#### Shared UI Components
+- **DetailDrawer** — Right-slide overlay with DrawerTabs for detail views
+- **FilterTabs** — Horizontal status/type filter bar with count badges
+- **StatusBadge** — Universal color-mapped badge (60+ statuses, roles, types)
+
+#### Users & Auth (2 new tables)
+- Access Control — Role list + 15x5 permission grid
+- Authentication Settings — Sessions, Passwords, MFA tabs
+- OTP Settings — Code length, format, expiry, rate limit configuration
+
+#### Security (5 new tables)
+- Fraud Detection — 3-tab overview (Events, Blocklist, Rules) with severity/status badges
+- Content Policy — Policy cards with type/action badges, enable toggles
+- Rate Limits — Rule table with scope badges, create modal
+- Credentials Vault — Type badges, reveal/rotate, expiry tracking
+
+#### Content (4 new tables)
+- CMS / Content — Page manager with status/type filters, editor
+- Messaging — SMTP config, email templates, logs
+- Chat — Split-view conversation manager with message thread
+
+#### AI & Prompts (3 new tables)
+- AI Settings — Provider cards (OpenAI/Anthropic/Google/Azure), API key management
+- Custom Agents — Agent builder with system prompts, category badges
+- Prompt Templates — Variable extraction, category filter, slug auto-generation
+
+#### Knowledge Base (2 new tables)
+- Knowledge Base — Article manager with stats, categories, markdown editor, view counts
+
+#### Page Upgrades (adapted from Zenzers patterns)
+- Platform Admin Dashboard — 6 stat cards, health table (10s refresh), audit activity, quick actions
+- Organizations — Search, plan filters, detail drawer with device usage
+- Users — Avatar initials, role badges, detail drawer
+- Orders — Status transitions, detail drawer (Details/Items/Timeline tabs)
+- Customers — Tag management, detail drawer (Profile/Orders/Activity tabs)
+- Inventory — Stock qty badges (red/amber/green), restock dialog
+- CRM — Pipeline breakdown bars, conversion rate cards
+- Leads — Dual table/pipeline view, 7-stage kanban columns
+- Campaigns — Create dialog, type/status badges
+- Feature Flags — Toggle cards, rollout % slider
+- Dev Wiki — Section sidebar, write/preview tabs
+
+### Architecture
+- 80+ database tables (was 65)
+- 100+ API routes (was 80)
+- 65+ dashboard pages (was 50)
+- 10 sidebar module groups (was 5)
+- 21 RBAC resources (was 15)
+
+---
+
 ## [2.0.0] - 2026-03-29
 
 ### SaaS Platform Release
