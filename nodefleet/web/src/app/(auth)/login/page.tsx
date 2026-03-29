@@ -19,7 +19,7 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get("callbackUrl") || "/";
+  const callbackUrl = searchParams.get("callbackUrl") || "/devices";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -45,12 +45,28 @@ function LoginForm() {
         }),
       });
 
-      // 302/307 = success (NextAuth redirects after login), 200 with error = failed
-      if (result.status === 302 || result.status === 307 || result.status === 0) {
-        window.location.href = callbackUrl;
+      // NextAuth returns 302 for both success and failure
+      // On failure, Location header contains "error=" param
+      // On success with redirect: "manual", we get opaque redirect (status 0) or 302 without error
+      if (result.type === "opaqueredirect" || result.status === 0) {
+        // Opaque redirect = success (browser blocked reading Location)
+        window.location.href = callbackUrl || "/";
+      } else if (result.status === 302 || result.status === 307) {
+        const location = result.headers.get("location") || "";
+        if (location.includes("error=")) {
+          setError("Invalid email or password");
+        } else {
+          window.location.href = callbackUrl || "/";
+        }
       } else if (result.ok) {
-        // NextAuth returns 200 with error page on failure
-        setError("Invalid email or password");
+        // Check if we actually got a session now
+        const sessionRes = await fetch("/api/auth/session");
+        const session = await sessionRes.json();
+        if (session?.user) {
+          window.location.href = callbackUrl || "/";
+        } else {
+          setError("Invalid email or password");
+        }
       } else {
         setError("Invalid email or password");
       }

@@ -48,7 +48,7 @@ export default auth((req) => {
   if (isPublicRoute) {
     // If already authenticated and trying to access login/register, redirect to home
     if (isAuthenticated && (pathname === '/login' || pathname === '/register')) {
-      const callbackUrl = req.nextUrl.searchParams.get('callbackUrl') || '/'
+      const callbackUrl = req.nextUrl.searchParams.get('callbackUrl') || '/devices'
       return NextResponse.redirect(new URL(callbackUrl, req.nextUrl.origin))
     }
     const response = NextResponse.next()
