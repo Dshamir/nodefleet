@@ -252,6 +252,23 @@ services:
     networks:
       - nodefleet-net
 
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: nodefleet-mailhog
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: '0.25'
+    ports:
+      - "50025:1025"    # SMTP
+      - "50826:8025"    # Web UI
+    networks:
+      - nodefleet-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
 volumes:
   postgres_data:
   redis_data:

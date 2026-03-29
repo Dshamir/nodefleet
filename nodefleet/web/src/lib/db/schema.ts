@@ -861,3 +861,81 @@ export type InsertProtocolSetting = InferInsertModel<typeof protocolSettings>;
 // Aliases for backward compatibility with API routes
 export const telemetry = telemetryRecords;
 export const gpsData = gpsRecords;
+
+// ============================================================================
+// Platform Admin — SaaS operator super-role
+// ============================================================================
+
+export const platformAdmins = pgTable('platform_admins', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  permissions: jsonb('permissions'), // granular overrides (optional)
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PlatformAdmin = InferSelectModel<typeof platformAdmins>;
+
+// ============================================================================
+// OTP / 2FA — TOTP secrets for user accounts
+// ============================================================================
+
+export const userOtpSecrets = pgTable('user_otp_secrets', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  secret: varchar('secret', { length: 255 }).notNull(), // encrypted TOTP secret
+  enabled: boolean('enabled').notNull().default(false),
+  backupCodes: jsonb('backup_codes'), // array of hashed backup codes
+  verifiedAt: timestamp('verified_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type UserOtpSecret = InferSelectModel<typeof userOtpSecrets>;
+
+// ============================================================================
+// Notifications — In-app + email notification system
+// ============================================================================
+
+export const notificationChannelEnum = pgEnum('notification_channel', [
+  'in_app',
+  'email',
+  'both',
+]);
+
+export const notificationTypeEnum = pgEnum('notification_type', [
+  'info',
+  'warning',
+  'error',
+  'success',
+]);
+
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    type: notificationTypeEnum('type').notNull().default('info'),
+    channel: notificationChannelEnum('channel').notNull().default('in_app'),
+    title: varchar('title', { length: 255 }).notNull(),
+    body: text('body'),
+    read: boolean('read').notNull().default(false),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    metadata: jsonb('metadata'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('notifications_user_id_idx').on(t.userId),
+    orgIdx: index('notifications_org_id_idx').on(t.orgId),
+  })
+);
+
+export type Notification = InferSelectModel<typeof notifications>;
+export type InsertNotification = InferInsertModel<typeof notifications>;
