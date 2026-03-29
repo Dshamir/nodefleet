@@ -23,6 +23,11 @@ export type Resource =
   | 'development'
   | 'admin'
   | 'notification'
+  | 'security'
+  | 'ai'
+  | 'knowledge_base'
+  | 'chat'
+  | 'cms'
 
 export type Action = 'create' | 'read' | 'update' | 'delete' | 'manage'
 
@@ -130,6 +135,41 @@ const PERMISSIONS: Record<string, Role> = {
   'notification:read': 'viewer',
   'notification:update': 'viewer',
   'notification:manage': 'admin',
+
+  // Security
+  'security:read': 'admin',
+  'security:create': 'admin',
+  'security:update': 'admin',
+  'security:delete': 'owner',
+  'security:manage': 'owner',
+
+  // AI
+  'ai:read': 'member',
+  'ai:create': 'admin',
+  'ai:update': 'admin',
+  'ai:delete': 'admin',
+  'ai:manage': 'owner',
+
+  // Knowledge Base
+  'knowledge_base:read': 'viewer',
+  'knowledge_base:create': 'member',
+  'knowledge_base:update': 'member',
+  'knowledge_base:delete': 'admin',
+  'knowledge_base:manage': 'admin',
+
+  // Chat
+  'chat:read': 'member',
+  'chat:create': 'member',
+  'chat:update': 'member',
+  'chat:delete': 'admin',
+  'chat:manage': 'admin',
+
+  // CMS
+  'cms:read': 'viewer',
+  'cms:create': 'admin',
+  'cms:update': 'admin',
+  'cms:delete': 'admin',
+  'cms:manage': 'owner',
 }
 
 /**

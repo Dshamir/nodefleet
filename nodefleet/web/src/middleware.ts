@@ -3,7 +3,7 @@ import { authConfig } from '@/lib/auth.config'
 import { NextResponse } from 'next/server'
 
 const publicRoutes = ['/login', '/register', '/forgot-password', '/api/auth']
-const protectedRoutes = ['/devices', '/settings', '/content', '/map', '/schedules', '/api/protected', '/commerce', '/crm', '/marketing', '/analytics', '/seo', '/domains', '/operations', '/dev', '/platform-admin']
+const protectedRoutes = ['/devices', '/settings', '/content', '/map', '/schedules', '/api/protected', '/commerce', '/crm', '/marketing', '/analytics', '/seo', '/domains', '/operations', '/dev', '/platform-admin', '/security', '/ai', '/knowledge-base']
 
 const allowedOrigin = process.env.CORS_ORIGIN || '*'
 

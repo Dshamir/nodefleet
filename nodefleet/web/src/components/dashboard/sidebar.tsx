@@ -41,6 +41,20 @@ import {
   Wrench,
   GitBranch,
   BookOpen,
+  Lock,
+  KeyRound,
+  ShieldAlert,
+  FileWarning,
+  Gauge,
+  Key,
+  Newspaper,
+  Fingerprint,
+  MessageSquare,
+  MessagesSquare,
+  Brain,
+  Bot,
+  FileCode,
+  Library,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -67,6 +81,51 @@ const navGroups: NavGroup[] = [
       { label: "Content Library", href: "/content", icon: FileText },
       { label: "Schedules", href: "/schedules", icon: Clock },
       { label: "Map", href: "/map", icon: Map },
+    ],
+  },
+  {
+    label: "Users & Auth",
+    icon: Lock,
+    items: [
+      { label: "Access Control", href: "/settings/access-control", icon: KeyRound },
+      { label: "Authentication", href: "/settings/auth", icon: Lock },
+      { label: "Audit Log", href: "/audit", icon: Shield },
+    ],
+  },
+  {
+    label: "Security",
+    icon: ShieldAlert,
+    items: [
+      { label: "Fraud Detection", href: "/security/fraud-detection", icon: ShieldAlert },
+      { label: "Content Policy", href: "/security/content-policy", icon: FileWarning },
+      { label: "Rate Limits", href: "/security/rate-limits", icon: Gauge },
+      { label: "Credentials", href: "/security/credentials", icon: Key },
+    ],
+  },
+  {
+    label: "Content",
+    icon: Newspaper,
+    items: [
+      { label: "CMS / Content", href: "/content/cms", icon: Newspaper },
+      { label: "OTP Settings", href: "/settings/otp", icon: Fingerprint },
+      { label: "Messaging", href: "/content/messaging", icon: MessageSquare },
+      { label: "Chat", href: "/content/chat", icon: MessagesSquare },
+    ],
+  },
+  {
+    label: "AI & Prompts",
+    icon: Brain,
+    items: [
+      { label: "AI Settings", href: "/ai/settings", icon: Brain },
+      { label: "Custom Agents", href: "/ai/agents", icon: Bot },
+      { label: "Prompt Templates", href: "/ai/prompt-templates", icon: FileCode },
+    ],
+  },
+  {
+    label: "Knowledge",
+    icon: Library,
+    items: [
+      { label: "Knowledge Base", href: "/knowledge-base", icon: Library },
     ],
   },
   {

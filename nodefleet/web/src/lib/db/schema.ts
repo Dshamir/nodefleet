@@ -1622,3 +1622,259 @@ export const devWikiPages = pgTable(
 );
 
 export type DevWikiPage = InferSelectModel<typeof devWikiPages>;
+
+// ============================================================================
+// Users & Auth — Auth Settings + Custom Roles
+// ============================================================================
+
+export const authSettings = pgTable('auth_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  settingKey: varchar('setting_key', { length: 100 }).notNull(),
+  settingValue: jsonb('setting_value').notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const customRoles = pgTable('custom_roles', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 100 }).notNull(),
+  description: text('description'),
+  permissions: jsonb('permissions').notNull(), // { resource: action[] }
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Security — Fraud, Content Policy, Rate Limits, Credentials
+// ============================================================================
+
+export const fraudSeverityEnum = pgEnum('fraud_severity', ['low', 'medium', 'high', 'critical']);
+export const fraudStatusEnum = pgEnum('fraud_status', ['flagged', 'review', 'blocked', 'dismissed']);
+
+export const fraudEvents = pgTable(
+  'fraud_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    type: varchar('type', { length: 100 }).notNull(),
+    severity: fraudSeverityEnum('severity').notNull().default('medium'),
+    status: fraudStatusEnum('status').notNull().default('flagged'),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    ipAddress: varchar('ip_address', { length: 45 }),
+    details: jsonb('details'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('fraud_events_org_id_idx').on(t.orgId),
+  })
+);
+
+export const fraudBlocklist = pgTable('fraud_blocklist', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  type: varchar('type', { length: 20 }).notNull(), // ip, user, email
+  value: varchar('value', { length: 255 }).notNull(),
+  reason: text('reason'),
+  createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const contentPolicyActionEnum = pgEnum('content_policy_action', ['flag', 'reject', 'quarantine', 'log']);
+
+export const contentPolicies = pgTable('content_policies', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  policyType: varchar('policy_type', { length: 50 }).notNull(), // file-upload, text-content, model-input, etc.
+  action: contentPolicyActionEnum('action').notNull().default('flag'),
+  rules: jsonb('rules'), // array of rule strings
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const rateLimitRules = pgTable('rate_limit_rules', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  scope: varchar('scope', { length: 50 }).notNull().default('global'), // global, per-tenant, per-user, per-endpoint
+  endpoint: varchar('endpoint', { length: 255 }),
+  maxRequests: integer('max_requests').notNull().default(100),
+  windowSeconds: integer('window_seconds').notNull().default(60),
+  enabled: boolean('enabled').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const credentialTypeEnum = pgEnum('credential_type', ['api_key', 'token', 'password', 'certificate']);
+
+export const credentialVault = pgTable('credential_vault', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  envKey: varchar('env_key', { length: 100 }),
+  type: credentialTypeEnum('type').notNull().default('api_key'),
+  service: varchar('service', { length: 100 }),
+  description: text('description'),
+  valueEncrypted: text('value_encrypted'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Content — CMS, Email Templates, Chat
+// ============================================================================
+
+export const cmsPageStatusEnum = pgEnum('cms_page_status', ['draft', 'published', 'archived']);
+
+export const cmsPages = pgTable(
+  'cms_pages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }).notNull(),
+    pageType: varchar('page_type', { length: 50 }).notNull().default('custom'), // home, about, contact, footer, custom
+    status: cmsPageStatusEnum('status').notNull().default('draft'),
+    content: text('content'),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgSlugIdx: index('cms_pages_org_slug_idx').on(t.orgId, t.slug),
+  })
+);
+
+export const emailTemplates = pgTable('email_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 255 }).notNull(),
+  subject: varchar('subject', { length: 255 }),
+  htmlBody: text('html_body'),
+  variables: jsonb('variables'), // array of variable names
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const chatStatusEnum = pgEnum('chat_status', ['open', 'in_progress', 'resolved', 'closed']);
+export const chatSenderTypeEnum = pgEnum('chat_sender_type', ['customer', 'ai', 'admin']);
+
+export const chatConversations = pgTable(
+  'chat_conversations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    customerId: uuid('customer_id').references(() => customers.id, { onDelete: 'set null' }),
+    status: chatStatusEnum('status').notNull().default('open'),
+    lastMessage: text('last_message'),
+    assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+    needsReview: boolean('needs_review').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('chat_conversations_org_id_idx').on(t.orgId),
+  })
+);
+
+export const chatMessages = pgTable('chat_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  conversationId: uuid('conversation_id').notNull().references(() => chatConversations.id, { onDelete: 'cascade' }),
+  body: text('body').notNull(),
+  senderType: chatSenderTypeEnum('sender_type').notNull(),
+  senderId: uuid('sender_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// AI — Providers, Agents, Prompt Templates
+// ============================================================================
+
+export const aiProviders = pgTable('ai_providers', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  vendor: varchar('vendor', { length: 100 }).notNull(), // openai, anthropic, google, azure
+  baseUrl: varchar('base_url', { length: 500 }),
+  model: varchar('model', { length: 100 }),
+  apiKeyEncrypted: text('api_key_encrypted'),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const agentCategoryEnum = pgEnum('agent_category', ['system', 'support', 'chat', 'workflow', 'custom']);
+
+export const customAgents = pgTable(
+  'custom_agents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    description: text('description'),
+    category: agentCategoryEnum('category').notNull().default('custom'),
+    providerId: uuid('provider_id').references(() => aiProviders.id, { onDelete: 'set null' }),
+    systemPrompt: text('system_prompt'),
+    isActive: boolean('is_active').notNull().default(true),
+    config: jsonb('config'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('custom_agents_org_id_idx').on(t.orgId),
+  })
+);
+
+export const promptTemplates = pgTable('prompt_templates', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }),
+  content: text('content').notNull(),
+  variables: jsonb('variables'), // extracted variable names
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Knowledge Base
+// ============================================================================
+
+export const kbArticleStatusEnum = pgEnum('kb_article_status', ['draft', 'published', 'archived']);
+
+export const kbCategories = pgTable('kb_categories', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  name: varchar('name', { length: 255 }).notNull(),
+  slug: varchar('slug', { length: 255 }).notNull(),
+  sortOrder: integer('sort_order').notNull().default(0),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const kbArticles = pgTable(
+  'kb_articles',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }).notNull(),
+    content: text('content'),
+    categoryId: uuid('category_id').references(() => kbCategories.id, { onDelete: 'set null' }),
+    status: kbArticleStatusEnum('status').notNull().default('draft'),
+    views: integer('views').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('kb_articles_org_id_idx').on(t.orgId),
+  })
+);
