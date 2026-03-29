@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { devices, orgMembers } from "@/lib/db/schema";
+import { devices, orgMembers, organizations } from "@/lib/db/schema";
 import { eq, desc, ilike, and, sql } from "drizzle-orm";
 import { generatePairingCode } from "@/lib/utils";
 
@@ -98,6 +98,28 @@ export async function POST(request: NextRequest) {
     }
 
     const orgId = member[0].orgId;
+
+    // Enforce device limit
+    const [org] = await db
+      .select({ deviceLimit: organizations.deviceLimit })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+
+    if (org) {
+      const [{ count: deviceCount }] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(devices)
+        .where(eq(devices.orgId, orgId));
+
+      if (Number(deviceCount) >= org.deviceLimit) {
+        return NextResponse.json(
+          { error: `Device limit reached (${org.deviceLimit}). Upgrade your plan to add more devices.` },
+          { status: 403 }
+        );
+      }
+    }
+
     const body = await request.json();
     const validated = createDeviceSchema.parse(body);
 

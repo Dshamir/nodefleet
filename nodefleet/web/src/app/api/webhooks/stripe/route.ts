@@ -46,8 +46,8 @@ export async function POST(request: NextRequest) {
         await db
           .update(organizations)
           .set({
-            stripeSubscriptionId: subscriptionId,
-            stripePlan: session.metadata.plan || "pro",
+            subscriptionId: subscriptionId,
+            plan: (session.metadata.plan as "free" | "pro" | "team" | "enterprise") || "pro",
             stripeCustomerId: session.customer as string,
           })
           .where(eq(organizations.id, orgId));
@@ -73,8 +73,8 @@ export async function POST(request: NextRequest) {
         await db
           .update(organizations)
           .set({
-            stripePlan: plan,
-            stripeSubscriptionId: subscription.id,
+            plan: plan as "free" | "pro" | "team" | "enterprise",
+            subscriptionId: subscription.id,
           })
           .where(eq(organizations.id, org[0].id));
       }
@@ -97,8 +97,8 @@ export async function POST(request: NextRequest) {
         await db
           .update(organizations)
           .set({
-            stripeSubscriptionId: null,
-            stripePlan: "free",
+            subscriptionId: null,
+            plan: "free",
           })
           .where(eq(organizations.id, org[0].id));
       }
@@ -115,11 +115,10 @@ export async function POST(request: NextRequest) {
 }
 
 function determinePlanFromPriceId(priceId: string): string {
-  // Map Stripe price IDs to plan names
-  // This should match your Stripe price configuration
+  // Map Stripe price IDs to plan names — must match stripe.ts PLANS config
   const priceIdMap: Record<string, string> = {
-    [process.env.STRIPE_PRICE_ID_PRO || ""]: "pro",
-    [process.env.STRIPE_PRICE_ID_BUSINESS || ""]: "business",
+    [process.env.STRIPE_PRICE_PRO_MONTHLY || ""]: "pro",
+    [process.env.STRIPE_PRICE_TEAM_MONTHLY || ""]: "team",
   };
 
   return priceIdMap[priceId] || "free";
