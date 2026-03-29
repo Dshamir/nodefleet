@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Loader2, User, Building2, Lock, KeyRound, Plus, Copy, Check, Trash2, AlertTriangle } from "lucide-react";
+import { Loader2, User, Building2, Lock, KeyRound, Plus, Copy, Check, Trash2, AlertTriangle, Radio, Wifi, Globe, Save } from "lucide-react";
 import Link from "next/link";
 
 interface SessionUser {
@@ -83,6 +83,22 @@ export default function SettingsPage() {
   const [keyCopied, setKeyCopied] = useState(false);
   const [keyGenerating, setKeyGenerating] = useState(false);
 
+  // Protocol routing
+  type ProtocolMap = Record<string, { websocket: boolean; mqtt: boolean; http: boolean }>;
+  const [protocols, setProtocols] = useState<ProtocolMap>({
+    telemetry: { websocket: true, mqtt: true, http: false },
+    gps: { websocket: true, mqtt: true, http: false },
+    media: { websocket: false, mqtt: false, http: true },
+    commands: { websocket: true, mqtt: false, http: false },
+    status: { websocket: true, mqtt: true, http: false },
+    alerts: { websocket: true, mqtt: true, http: true },
+  });
+  const [protocolsDirty, setProtocolsDirty] = useState(false);
+  const [protocolsSaving, setProtocolsSaving] = useState(false);
+
+  // MQTT status
+  const [mqttStatus, setMqttStatus] = useState<{ status: string; publicUrl: string; wsUrl: string } | null>(null);
+
   // Delete account
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletePw, setDeletePw] = useState("");
@@ -134,6 +150,41 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => { fetchKeys(); }, [fetchKeys]);
+
+  // Fetch protocol routing settings
+  useEffect(() => {
+    fetch("/api/settings/protocols")
+      .then((r) => r.json())
+      .then((data) => { if (data && !data.error) setProtocols(data); })
+      .catch(console.error);
+    fetch("/api/mqtt/status")
+      .then((r) => r.json())
+      .then((data) => { if (data && !data.error) setMqttStatus(data); })
+      .catch(console.error);
+  }, []);
+
+  async function saveProtocols() {
+    setProtocolsSaving(true);
+    try {
+      await fetch("/api/settings/protocols", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(protocols),
+      });
+      setProtocolsDirty(false);
+    } catch (err) {
+      console.error("Failed to save protocols:", err);
+    }
+    setProtocolsSaving(false);
+  }
+
+  function toggleProtocol(dataType: string, protocol: "websocket" | "mqtt" | "http") {
+    setProtocols((prev) => ({
+      ...prev,
+      [dataType]: { ...prev[dataType], [protocol]: !prev[dataType][protocol] },
+    }));
+    setProtocolsDirty(true);
+  }
 
   // Profile update
   async function handleUpdateProfile() {
@@ -476,6 +527,102 @@ export default function SettingsPage() {
           <Link href="/settings/billing">
             <Button className="bg-primary hover:bg-primary-dark">Go to Billing</Button>
           </Link>
+        </CardContent>
+      </Card>
+
+      {/* Protocol Routing */}
+      <Card className="bg-slate-900/50 border-slate-800">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Radio className="w-5 h-5 text-cyan-400" />
+              <CardTitle>Protocol Routing</CardTitle>
+            </div>
+            {protocolsDirty && (
+              <Button size="sm" onClick={saveProtocols} disabled={protocolsSaving}>
+                {protocolsSaving ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Save className="w-3 h-3 mr-1" />}
+                Save
+              </Button>
+            )}
+          </div>
+          <p className="text-sm text-slate-400 mt-1">Choose which protocol each data type uses.</p>
+        </CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-700">
+                  <th className="text-left py-2 text-slate-400 font-normal">Data Type</th>
+                  <th className="text-center py-2 text-slate-400 font-normal w-28">
+                    <div className="flex items-center justify-center gap-1"><Globe className="w-3 h-3" /> WebSocket</div>
+                  </th>
+                  <th className="text-center py-2 text-slate-400 font-normal w-28">
+                    <div className="flex items-center justify-center gap-1"><Radio className="w-3 h-3" /> MQTT</div>
+                  </th>
+                  <th className="text-center py-2 text-slate-400 font-normal w-28">
+                    <div className="flex items-center justify-center gap-1"><Wifi className="w-3 h-3" /> HTTP</div>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(protocols).map(([dataType, p]) => (
+                  <tr key={dataType} className="border-b border-slate-800">
+                    <td className="py-2.5 text-slate-300 capitalize">{dataType}</td>
+                    {(["websocket", "mqtt", "http"] as const).map((proto) => (
+                      <td key={proto} className="text-center py-2.5">
+                        <button
+                          onClick={() => toggleProtocol(dataType, proto)}
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                            p[proto] ? "bg-cyan-500" : "bg-slate-700"
+                          }`}
+                        >
+                          <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                            p[proto] ? "translate-x-5" : "translate-x-1"
+                          }`} />
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-slate-500 mt-3">
+            WebSocket: real-time dashboard. MQTT: external integrations (Grafana, Node-RED). HTTP: file uploads, API calls.
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* MQTT Broker */}
+      <Card className="bg-slate-900/50 border-slate-800">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Radio className="w-5 h-5 text-emerald-400" />
+            <CardTitle>MQTT Broker</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {mqttStatus ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${mqttStatus.status === "connected" ? "bg-emerald-400" : "bg-red-400"}`} />
+                <span className="text-sm text-slate-300">{mqttStatus.status === "connected" ? "Connected" : "Disconnected"}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="text-slate-500">MQTT URL</div>
+                <div className="text-slate-300 font-mono text-xs">{mqttStatus.publicUrl}</div>
+                <div className="text-slate-500">WebSocket URL</div>
+                <div className="text-slate-300 font-mono text-xs">{mqttStatus.wsUrl}</div>
+                <div className="text-slate-500">Topic Prefix</div>
+                <div className="text-slate-300 font-mono text-xs">nodefleet/&#123;deviceId&#125;/</div>
+              </div>
+              <p className="text-xs text-slate-500">
+                Subscribe: <code className="text-cyan-400">mosquitto_sub -h localhost -p 51883 -t &quot;nodefleet/#&quot; -v</code>
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">Loading MQTT status...</p>
+          )}
         </CardContent>
       </Card>
 
