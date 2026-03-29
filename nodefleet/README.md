@@ -160,7 +160,8 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 - [firmware/esp32_agent/README.md](./firmware/esp32_agent/README.md) -- ESP32 firmware setup and flashing
 - [HARDWARE_ALTERNATIVES.md](./HARDWARE_ALTERNATIVES.md) -- Compatible boards and buying guide
 - [KNOWN_ISSUES.md](./KNOWN_ISSUES.md) -- Known issues, gaps, and recommendations
-- [recommendation-report.md](./recommendation-report.md) -- 15-dimension gap analysis scorecard
+- [recommendation-report.md](./recommendation-report.md) -- 15-dimension firmware/hardware gap analysis
+- [GAP-ANALYSIS-SCORECARD.md](./GAP-ANALYSIS-SCORECARD.md) -- 25-dimension full-stack gap analysis (infrastructure, applications, UI/UX, documentation)
 
 ## API Endpoints (38 routes)
 
