@@ -1447,3 +1447,178 @@ export const leadScoringRules = pgTable('lead_scoring_rules', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ============================================================================
+// Analytics
+// ============================================================================
+
+export const pageViews = pgTable('page_views', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  path: varchar('path', { length: 500 }).notNull(),
+  referrer: varchar('referrer', { length: 500 }),
+  userAgent: text('user_agent'),
+  ip: varchar('ip', { length: 45 }),
+  sessionId: varchar('session_id', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const analyticsEvents = pgTable(
+  'analytics_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    properties: jsonb('properties'),
+    sessionId: varchar('session_id', { length: 255 }),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('analytics_events_org_id_idx').on(t.orgId),
+    nameIdx: index('analytics_events_name_idx').on(t.name),
+  })
+);
+
+// ============================================================================
+// SEO Settings
+// ============================================================================
+
+export const seoSettings = pgTable('seo_settings', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  defaultTitle: varchar('default_title', { length: 255 }),
+  defaultDescription: text('default_description'),
+  ogImage: varchar('og_image', { length: 500 }),
+  robots: text('robots'),
+  googleAnalyticsId: varchar('google_analytics_id', { length: 50 }),
+  sitemap: jsonb('sitemap'),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Domains
+// ============================================================================
+
+export const domains = pgTable('domains', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  domain: varchar('domain', { length: 255 }).notNull(),
+  verified: boolean('verified').notNull().default(false),
+  primary: boolean('primary').notNull().default(false),
+  sslStatus: varchar('ssl_status', { length: 50 }),
+  dnsRecords: jsonb('dns_records'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Operations — Feature Flags
+// ============================================================================
+
+export const featureFlags = pgTable('feature_flags', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  enabled: boolean('enabled').notNull().default(false),
+  rolloutPercentage: integer('rollout_percentage').notNull().default(0),
+  targetOrgs: jsonb('target_orgs'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type FeatureFlag = InferSelectModel<typeof featureFlags>;
+
+// ============================================================================
+// Development — Tickets
+// ============================================================================
+
+export const devTicketStatusEnum = pgEnum('dev_ticket_status', [
+  'open', 'in_progress', 'review', 'done', 'closed',
+]);
+
+export const devTicketPriorityEnum = pgEnum('dev_ticket_priority', [
+  'low', 'medium', 'high', 'critical',
+]);
+
+export const devTickets = pgTable(
+  'dev_tickets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    status: devTicketStatusEnum('status').notNull().default('open'),
+    priority: devTicketPriorityEnum('priority').notNull().default('medium'),
+    assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+    labels: jsonb('labels'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgIdx: index('dev_tickets_org_id_idx').on(t.orgId),
+  })
+);
+
+export type DevTicket = InferSelectModel<typeof devTickets>;
+
+// ============================================================================
+// Development — Repair Plans
+// ============================================================================
+
+export const repairPlanStatusEnum = pgEnum('repair_plan_status', [
+  'planned', 'in_progress', 'completed',
+]);
+
+export const repairPlans = pgTable('repair_plans', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+  deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
+  title: varchar('title', { length: 255 }).notNull(),
+  description: text('description'),
+  status: repairPlanStatusEnum('status').notNull().default('planned'),
+  steps: jsonb('steps'),
+  assignedTo: uuid('assigned_to').references(() => users.id, { onDelete: 'set null' }),
+  dueDate: timestamp('due_date', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Development — Version Releases
+// ============================================================================
+
+export const versionReleases = pgTable('version_releases', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  version: varchar('version', { length: 50 }).notNull(),
+  releaseNotes: text('release_notes'),
+  changelog: jsonb('changelog'),
+  releasedAt: timestamp('released_at', { withTimezone: true }),
+  releasedBy: uuid('released_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ============================================================================
+// Development — Dev Wiki
+// ============================================================================
+
+export const devWikiPages = pgTable(
+  'dev_wiki_pages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id').notNull().references(() => organizations.id, { onDelete: 'cascade' }),
+    title: varchar('title', { length: 255 }).notNull(),
+    slug: varchar('slug', { length: 255 }).notNull(),
+    content: text('content'),
+    parentId: uuid('parent_id'),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    orgSlugIdx: index('dev_wiki_org_slug_idx').on(t.orgId, t.slug),
+  })
+);
+
+export type DevWikiPage = InferSelectModel<typeof devWikiPages>;
