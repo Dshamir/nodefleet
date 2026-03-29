@@ -57,11 +57,13 @@ Commands:
   compile                    Compile ESP32 firmware only (no flash)
   flash                      Compile + flash ESP32 firmware via PlatformIO
   mqtt                       Show MQTT broker status + test publish
+  email                      Show email service (Mailhog) status
+  admin                      Show platform admin console URL (port 50301)
   db [sql]                   Run SQL query against PostgreSQL
   migrate                    Create/verify all database tables
   -h, --help                 Show this help
 
-Services: web, ws-server, nginx, postgres, redis, minio, mqtt, ngrok
+Services: web, ws-server, nginx, postgres, redis, minio, mqtt, mailhog, ngrok
 
 Examples:
   ./nodefleet.sh                            # Full build + start + health check
@@ -89,7 +91,7 @@ MODE="default"
 SERVICES=()
 
 case "${1:-}" in
-  rebuild|restart|logs|shell|down|health|bump|tunnel|setup|simulate|compile|flash|mqtt|db|migrate)
+  rebuild|restart|logs|shell|down|health|bump|tunnel|setup|simulate|compile|flash|mqtt|email|admin|db|migrate)
     MODE="$1"; shift; SERVICES=("$@") ;;
   -h|--help)
     print_help ;;
@@ -553,6 +555,7 @@ do_health() {
   # ── Messaging ──
   echo -e "  ${BOLD}Messaging${RESET}"
   probe_container "mqtt            → container alive"  "mqtt"
+  probe_container "mailhog         → container alive"  "mailhog"
 
   # ── Tunnel ──
   echo -e "  ${BOLD}Tunnel${RESET}"
@@ -858,6 +861,35 @@ case "$MODE" in
     ;;
   mqtt)
     do_mqtt
+    ;;
+  email)
+    print_header
+    echo -e "${BOLD}Email Service (Mailhog)${RESET}"
+    echo ""
+    if docker compose ps mailhog --format '{{.Status}}' 2>/dev/null | grep -q "Up"; then
+      echo -e "  ${GREEN}✓ Mailhog is running${RESET}"
+      echo -e "  ${DIM}SMTP:   ${RESET}localhost:50025"
+      echo -e "  ${DIM}Web UI: ${RESET}http://localhost:50826"
+    else
+      echo -e "  ${RED}✗ Mailhog is not running${RESET}"
+      echo -e "  ${DIM}Run ./nodefleet.sh to start all services${RESET}"
+    fi
+    echo ""
+    ;;
+  admin)
+    print_header
+    echo -e "${BOLD}Platform Admin Console${RESET}"
+    echo ""
+    echo -e "  ${DIM}URL:  ${RESET}http://localhost:50301"
+    echo -e "  ${DIM}Port: ${RESET}50301 (via nginx)"
+    echo -e "  ${DIM}Role: ${RESET}Requires platform_admin user role"
+    echo ""
+    if docker compose ps nginx --format '{{.Status}}' 2>/dev/null | grep -q "Up"; then
+      echo -e "  ${GREEN}✓ nginx is running — admin console accessible${RESET}"
+    else
+      echo -e "  ${RED}✗ nginx is not running${RESET}"
+    fi
+    echo ""
     ;;
   db)
     do_db
