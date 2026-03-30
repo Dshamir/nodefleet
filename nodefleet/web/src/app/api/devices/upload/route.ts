@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { mediaFiles } from "@/lib/db/schema";
 import jwt from "jsonwebtoken";
-import { generatePresignedUrl } from "@/lib/s3";
+import { generatePresignedUrl, uploadFile } from "@/lib/s3";
 import { v4 as uuidv4 } from "uuid";
 
 const uploadSchema = z.object({
@@ -36,6 +36,17 @@ function getMediaType(mimeType: string): "image" | "video" | "audio" | "document
   return "document";
 }
 
+/**
+ * Device upload endpoint — supports two modes:
+ *
+ * Mode 1 (presigned URL): Device sends JSON `{ filename, contentType, size }`.
+ *   Returns a presigned S3 PUT URL. Device uploads directly to MinIO.
+ *   Best for local WiFi where MinIO is reachable.
+ *
+ * Mode 2 (binary proxy): Device sends binary body with Content-Type header
+ *   (e.g. image/jpeg) and X-Filename header. Server streams to MinIO internally.
+ *   Required for LTE/remote devices where MinIO is unreachable.
+ */
 export async function POST(request: NextRequest) {
   try {
     const authHeader = request.headers.get("Authorization");
@@ -48,6 +59,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid device token" }, { status: 401 });
     }
 
+    const contentType = request.headers.get("Content-Type") || "";
+    const isBinaryUpload = !contentType.includes("application/json");
+
+    if (isBinaryUpload) {
+      // Mode 2: Binary proxy — device sends raw file, server uploads to MinIO
+      const filename = request.headers.get("X-Filename") || `upload-${Date.now()}`;
+      const body = await request.arrayBuffer();
+      const buffer = Buffer.from(body);
+
+      if (buffer.length === 0) {
+        return NextResponse.json({ error: "Empty body" }, { status: 400 });
+      }
+      if (buffer.length > 50 * 1024 * 1024) {
+        return NextResponse.json({ error: "File too large (50MB max)" }, { status: 413 });
+      }
+
+      const fileId = uuidv4();
+      const timestamp = Date.now();
+      const s3Key = `devices/${verified.deviceId}/${timestamp}-${fileId}`;
+
+      await uploadFile(s3Key, buffer, contentType);
+
+      await db.insert(mediaFiles).values({
+        id: fileId,
+        deviceId: verified.deviceId,
+        orgId: verified.orgId,
+        type: getMediaType(contentType),
+        filename,
+        originalFilename: filename,
+        mimeType: contentType,
+        s3Key,
+        s3Bucket: process.env.S3_BUCKET || "nodefleet-media",
+        size: buffer.length,
+      });
+
+      return NextResponse.json({ s3Key, fileId, size: buffer.length });
+    }
+
+    // Mode 1: Presigned URL — device uploads directly to MinIO
     const body = await request.json();
     const validated = uploadSchema.parse(body);
 
@@ -86,7 +136,7 @@ export async function POST(request: NextRequest) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });
     }
-    console.error("Error generating device upload URL:", error);
+    console.error("Error in device upload:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
