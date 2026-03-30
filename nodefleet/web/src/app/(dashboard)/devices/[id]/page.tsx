@@ -40,6 +40,12 @@ import {
   Settings2,
   Activity,
   AlertTriangle,
+  MapPin,
+  Satellite,
+  RefreshCw,
+  Info,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -131,6 +137,178 @@ function formatUptime(seconds: number | null): string {
   if (h > 0) return `${h}h ${m}m`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
+}
+
+// ---------------------------------------------------------------------------
+// GPS Status Card — visual indicator + calibration + help
+// ---------------------------------------------------------------------------
+
+function GpsStatusCard({
+  device,
+  gps,
+  deviceId,
+  onRefresh,
+}: {
+  device: Device | null;
+  gps: GpsRecord[];
+  deviceId: string;
+  onRefresh: () => void;
+}) {
+  const [calibrating, setCalibrating] = useState(false);
+  const [calibrateMsg, setCalibrateMsg] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+
+  // Determine GPS status from data
+  const latestFix = gps.length > 0 ? gps[0] : null;
+  const fixAge = latestFix
+    ? Math.round((Date.now() - new Date(latestFix.timestamp).getTime()) / 1000)
+    : null;
+  const isStale = fixAge !== null && fixAge > 300; // older than 5 minutes
+  const isVeryStale = fixAge !== null && fixAge > 86400; // older than 1 day
+  const isOnline = device?.status === "online";
+
+  let statusColor = "bg-red-500/20 text-red-400 border-red-500/30";
+  let statusIcon = <AlertTriangle className="w-4 h-4" />;
+  let statusText = "No GPS Data";
+
+  if (latestFix && !isVeryStale) {
+    statusColor = "bg-green-500/20 text-green-400 border-green-500/30";
+    statusIcon = <Satellite className="w-4 h-4" />;
+    statusText = "GPS Active";
+  } else if (latestFix && isVeryStale) {
+    statusColor = "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+    statusIcon = <AlertTriangle className="w-4 h-4" />;
+    statusText = "GPS Stale";
+  }
+
+  function formatAge(seconds: number): string {
+    if (seconds < 60) return `${seconds}s ago`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+    return `${Math.round(seconds / 86400)}d ago`;
+  }
+
+  async function handleCalibrate() {
+    setCalibrating(true);
+    setCalibrateMsg(null);
+    try {
+      const res = await fetch(`/api/devices/${deviceId}/command`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          command: "restart_gnss",
+          payload: { source: "gps_tab" },
+        }),
+      });
+      if (res.ok) {
+        setCalibrateMsg("GNSS restart command sent. The device will attempt to reacquire satellites. This can take 1\u20135 minutes.");
+      } else {
+        setCalibrateMsg("Failed to send command. Is the device online?");
+      }
+    } catch {
+      setCalibrateMsg("Could not reach the server.");
+    } finally {
+      setCalibrating(false);
+    }
+  }
+
+  return (
+    <Card className="bg-slate-900/50 border-slate-800">
+      <CardContent className="pt-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          {/* Status badge */}
+          <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${statusColor}`}>
+            {statusIcon}
+            <span className="text-sm font-medium">{statusText}</span>
+          </div>
+
+          {/* Fix details */}
+          <div className="flex-1 text-sm text-slate-400 space-y-1">
+            {latestFix ? (
+              <>
+                <p>
+                  Last fix: <span className="text-slate-300">{formatAge(fixAge!)}</span>
+                  {" \u2014 "}
+                  <span className="font-mono text-slate-300">
+                    {latestFix.latitude.toFixed(4)}, {latestFix.longitude.toFixed(4)}
+                  </span>
+                </p>
+                {isStale && (
+                  <p className="text-yellow-400 text-xs">
+                    GPS data is outdated. The device may be indoors, powered off, or the GNSS module needs a restart.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p>No GPS records found for this device.</p>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 border-slate-700"
+              onClick={onRefresh}
+            >
+              <RefreshCw className="w-3 h-3" />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1 border-slate-700"
+              onClick={handleCalibrate}
+              disabled={calibrating || !isOnline}
+              title={!isOnline ? "Device must be online to calibrate GPS" : "Restart the GNSS module on the device"}
+            >
+              {calibrating ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Satellite className="w-3 h-3" />
+              )}
+              Calibrate GPS
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 text-slate-400"
+              onClick={() => setShowHelp(!showHelp)}
+            >
+              <Info className="w-3 h-3" />
+              {showHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </Button>
+          </div>
+        </div>
+
+        {/* Calibrate result message */}
+        {calibrateMsg && (
+          <p className={`mt-3 text-sm ${calibrateMsg.includes("Failed") || calibrateMsg.includes("Could not") ? "text-red-400" : "text-blue-400"}`}>
+            {calibrateMsg}
+          </p>
+        )}
+
+        {/* Help section */}
+        {showHelp && (
+          <div className="mt-4 p-4 rounded-lg bg-slate-800/50 border border-slate-700 text-sm text-slate-300 space-y-3">
+            <p className="font-medium text-slate-200">GPS Troubleshooting</p>
+            <div className="space-y-2">
+              <p><strong>No GPS data at all?</strong> The device needs to be powered on, connected to NodeFleet, and have the GPS module enabled. Check the device status badge at the top of this page.</p>
+              <p><strong>GPS data is old / stale?</strong> The GPS module may have lost its satellite connection. Try these steps:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2 text-slate-400">
+                <li>Click <strong>Calibrate GPS</strong> above \u2014 this restarts the GPS module on the device.</li>
+                <li>Make sure the device has a <strong>clear view of the sky</strong> (near a window or outdoors). GPS does not work well indoors.</li>
+                <li>Wait <strong>1\u20135 minutes</strong> after calibrating. The first satellite fix after a restart takes time (cold start).</li>
+                <li>If still no data after 5 minutes, try <strong>rebooting the device</strong> from the Commands tab.</li>
+              </ol>
+              <p><strong>Accuracy is low?</strong> Move the device to a location with open sky. Buildings, trees, and metal roofs can block GPS signals.</p>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -550,9 +728,16 @@ export default function DeviceDetailPage() {
 
         {/* ---- GPS Tab ---- */}
         <TabsContent value="gps" className="space-y-6 mt-6">
+          {/* GPS Status Indicator */}
+          <GpsStatusCard device={device} gps={gps} deviceId={deviceId} onRefresh={fetchGps} />
+
+          {/* GPS Trail */}
           <Card className="bg-slate-900/50 border-slate-800">
             <CardHeader>
-              <CardTitle>GPS Trail</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <MapPin className="w-5 h-5" />
+                GPS Trail
+              </CardTitle>
             </CardHeader>
             <CardContent>
               {gps.length === 0 ? (
