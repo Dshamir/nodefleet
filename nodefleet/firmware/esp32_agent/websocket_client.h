@@ -13,7 +13,8 @@ public:
     WebSocketClient(const String& server_host, uint16_t server_port, const String& endpoint);
 
     // Connection management
-    bool connect(const String& device_token);
+    bool connect(const String& device_token, bool use_ssl = false,
+                 const String& host = "", uint16_t port = 0);
     bool disconnect();
     bool isConnected();
     bool reconnect();

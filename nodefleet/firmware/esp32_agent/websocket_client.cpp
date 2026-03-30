@@ -64,8 +64,15 @@ void WebSocketClient::onWebSocketEvent(WStype_t type, uint8_t* payload, size_t l
     }
 }
 
-bool WebSocketClient::connect(const String& device_token) {
-    LOG_INFO("Connecting to WebSocket: %s:%d%s", server_host.c_str(), server_port, endpoint.c_str());
+bool WebSocketClient::connect(const String& device_token, bool use_ssl,
+                               const String& host, uint16_t port) {
+    // Allow runtime override of host/port (for dual-mode local/remote)
+    String connect_host = host.length() > 0 ? host : server_host;
+    uint16_t connect_port = port > 0 ? port : server_port;
+
+    LOG_INFO("Connecting to WebSocket: %s:%d%s (SSL=%s)",
+             connect_host.c_str(), connect_port, endpoint.c_str(),
+             use_ssl ? "yes" : "no");
 
     this->device_token = device_token;
     connection_state = 1;  // Connecting
@@ -77,13 +84,13 @@ bool WebSocketClient::connect(const String& device_token) {
     // Build the path with token query parameter
     String path = endpoint + "?token=" + device_token;
 
-#if USE_SSL
-    // Use SSL for ngrok/production
-    webSocket.beginSSL(server_host.c_str(), 443, path.c_str());
-#else
-    // Use plain WebSocket for local development
-    webSocket.begin(server_host.c_str(), server_port, path.c_str());
-#endif
+    if (use_ssl) {
+        webSocket.beginSSL(connect_host.c_str(), connect_port, path.c_str());
+        LOG_INFO("WebSocket connection initiated (WSS/SSL)");
+    } else {
+        webSocket.begin(connect_host.c_str(), connect_port, path.c_str());
+        LOG_INFO("WebSocket connection initiated (WS)");
+    }
 
     // Register event handler
     webSocket.onEvent(eventCallback);
@@ -94,11 +101,6 @@ bool WebSocketClient::connect(const String& device_token) {
     // Set heartbeat interval (ping every 15s, pong timeout 3s, disconnect after 2 missed)
     webSocket.enableHeartbeat(15000, 3000, 2);
 
-#if USE_SSL
-    LOG_INFO("WebSocket connection initiated (WSS/SSL)");
-#else
-    LOG_INFO("WebSocket connection initiated (WS)");
-#endif
     return true;
 }
 
