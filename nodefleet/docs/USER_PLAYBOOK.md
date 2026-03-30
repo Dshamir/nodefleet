@@ -141,17 +141,22 @@ Replace `YOUR_CODE` with the 6-character pairing code from Step 3 (e.g., `./node
 
 **What happens:** A simulated device connects to NodeFleet, pairs using the code, and starts sending fake heartbeat data (battery level, signal strength, CPU temperature, memory usage) and GPS coordinates every 30 seconds. Go back to the dashboard — you will see the device appear with a green "Online" badge.
 
-### Option B: Using Real ESP32 Hardware
+### Option B: Using Real ESP32 Hardware (WiFi Setup via Phone)
 
-If you have a physical ESP32 board:
+If you have a physical ESP32 board, you do **not** need to edit any code files. The device has a built-in setup screen you access from your phone:
 
-1. Open the firmware project at `firmware/esp32_agent/`.
-2. Edit `config.h` and set:
-   - Your WiFi network name and password.
-   - The NodeFleet server address (e.g., `http://YOUR_COMPUTER_IP:50080`).
-   - The pairing code from Step 3.
-3. Flash the firmware to the board using PlatformIO or Arduino IDE.
-4. Power on the board — it will automatically pair and start streaming data.
+1. **Flash the firmware** to the board using PlatformIO or Arduino IDE (see [firmware/esp32_agent/README.md](../firmware/esp32_agent/README.md) for instructions).
+2. **Power on the board.** If it has never been set up before (or cannot connect to WiFi), it will create its own WiFi network called **"NodeFleet-Setup"**.
+3. **On your phone**, go to WiFi settings and connect to **"NodeFleet-Setup"** (password: `nodefleet`).
+4. **A setup page opens automatically** in your phone's browser. If it does not, open any browser and go to `http://192.168.4.1`.
+5. **Fill in the form:**
+   - **WiFi Network** — Your home or office WiFi name and password.
+   - **NodeFleet Server** — The IP address of your computer running NodeFleet (e.g., `192.168.0.19`). The port is usually `50300`.
+   - **Remote Access** — If you want the device to work from anywhere (not just your WiFi), enter the ngrok domain (default: `nodefleet.ngrok.dev`). Set the connection mode to **Auto** — the device will use your local WiFi when available and switch to the internet (via LTE/4G) when WiFi is out of range.
+   - **Pairing Code** — The 6-character code from Step 3.
+6. **Tap "Save & Connect".** The device will restart, connect to your WiFi, pair with NodeFleet, and start streaming data.
+
+> **No WiFi? No problem.** If your device has a SIM card with a cellular data plan (like the Waveshare ESP32-S3-SIM7670G board), it can connect to NodeFleet over 4G/LTE — no WiFi needed. Just set the connection mode to **Remote** during setup.
 
 For the full hardware setup guide, see [firmware/esp32_agent/README.md](../firmware/esp32_agent/README.md).
 
@@ -342,6 +347,66 @@ Permanently delete your account. Requires your password for confirmation. If you
 
 ---
 
+## Step 11: Remote Access — Connect Devices from Anywhere
+
+By default, NodeFleet runs on your local network. This means devices need to be on the same WiFi as your computer. **Remote access** removes that limitation — your devices can connect from anywhere in the world using a cellular (4G/LTE) connection or a different WiFi network.
+
+### How It Works (Plain English)
+
+Think of it like a phone number for your NodeFleet server. Normally, devices can only talk to the server when they are in the same building (on the same WiFi). Remote access gives your server a public address on the internet — `nodefleet.ngrok.dev` — so devices can reach it from any network, anywhere.
+
+This is powered by a service called **ngrok** that creates a secure tunnel from the internet to your local server. It is already included in NodeFleet — you just need to turn it on.
+
+### Setting Up Remote Access
+
+1. **It is already running.** If you started NodeFleet with `./nodefleet.sh`, ngrok is running automatically. Verify by visiting `http://localhost:50040` — you should see the ngrok dashboard.
+
+2. **Your public address** is: `https://nodefleet.ngrok.dev`
+   - You can open this URL from any device on any network (your phone on cellular data, a laptop at a coffee shop, etc.) and it will load your NodeFleet dashboard.
+
+3. **Configure your ESP32 device** to use remote access:
+   - During the phone setup (Step 4, Option B), set the **Connection Mode** to **Auto**.
+   - The device will try your local WiFi first. If it cannot reach the server locally, it automatically switches to the internet address (`nodefleet.ngrok.dev`).
+
+### What Each Connection Mode Means
+
+| Mode | When to Use | How It Works |
+|------|-------------|--------------|
+| **Auto** (recommended) | Most situations | Tries local WiFi first. If the server is not reachable, switches to the internet via ngrok. Best of both worlds. |
+| **Local** | Device is always on the same WiFi as the server | Connects directly to your computer's IP address. Fastest, no internet needed. |
+| **Remote** | Device is always away from your WiFi (e.g., in a vehicle, remote site) | Always connects through the internet via ngrok. Requires the device to have a cellular data plan (SIM card) or access to a different WiFi network. |
+
+### What Works Remotely
+
+Everything that works locally also works remotely:
+
+| Feature | Works Remotely? | How |
+|---------|----------------|-----|
+| Live heartbeat & telemetry | Yes | Via WebSocket through ngrok |
+| GPS tracking on the map | Yes | Via WebSocket through ngrok |
+| Sending commands (photo, reboot, etc.) | Yes | Via WebSocket through ngrok |
+| Photo & audio uploads | Yes | Device uploads directly through ngrok to the server |
+| MQTT data (for Grafana, Home Assistant) | Yes | Via `wss://nodefleet.ngrok.dev/mqtt` |
+| Dashboard access | Yes | Open `https://nodefleet.ngrok.dev` in any browser |
+
+### Connecting External Tools (Grafana, Home Assistant, n8n)
+
+If you use tools like Grafana, Home Assistant, or n8n and want them to receive live device data via MQTT, connect them to:
+
+```
+wss://nodefleet.ngrok.dev/mqtt
+```
+
+This is a standard MQTT connection over WebSocket. No special configuration needed — just set the broker address to the URL above.
+
+### Remote Access Limits
+
+- **Free ngrok plan:** Supports up to 40 simultaneous device connections. For larger fleets, upgrade to ngrok Pro.
+- **Cellular data costs:** When devices connect via 4G/LTE, they use your SIM card's data plan. Heartbeats and GPS use very little data (~1 KB every 30 seconds). Photo uploads use more (50-200 KB per photo).
+- **Speed:** Remote connections are slightly slower than local WiFi (typically 50-200 ms latency). You will not notice the difference for telemetry and commands. Live video streaming may have a noticeable delay.
+
+---
+
 ## Common Tasks Cheatsheet
 
 These are the most frequently used commands. Run them from a terminal inside the `nodefleet` folder.
@@ -398,6 +463,19 @@ There is currently no email-based password recovery. Your options:
 - If you have database access, you can reset the password directly in PostgreSQL.
 - Register a new account with a different email address.
 
+### "My device was working on WiFi but won't connect over 4G/LTE"
+
+- Make sure the SIM card has an active data plan. Check for a signal indicator on the device (or check the serial output for signal strength).
+- Verify the connection mode is set to **Auto** or **Remote** (not **Local**).
+- Check that ngrok is running: visit `http://localhost:50040`. If ngrok is stopped, run `./nodefleet.sh` to restart all services.
+- The device may take 30-60 seconds to establish a cellular connection after losing WiFi.
+
+### "I cannot access the dashboard from outside my network"
+
+- Open `https://nodefleet.ngrok.dev` in your browser. If it does not load, ngrok may not be running.
+- Run `./nodefleet.sh --status` and look for the ngrok service.
+- If you changed the ngrok domain, make sure the `NGROK_AUTHTOKEN` in your `.env` file is valid.
+
 ### "Services are slow or using too much memory"
 
 - Close other applications to free up RAM.
@@ -420,6 +498,11 @@ There is currently no email-based password recovery. Your options:
 | **JWT Token**  | A secure authentication token issued to a device after pairing. The device uses it for all future connections. Valid for 365 days. |
 | **Cron**       | A scheduling syntax for recurring tasks (e.g., `0 8 * * *` means "every day at 8:00 AM").      |
 | **ESP32**      | A low-cost WiFi-enabled microcontroller commonly used in IoT projects. NodeFleet is designed to manage fleets of these devices. |
+| **ngrok**      | A service that gives your local NodeFleet server a public internet address (like `nodefleet.ngrok.dev`), so devices and users can connect from anywhere. |
+| **LTE / 4G**   | Cellular data — the same kind of connection your phone uses when WiFi is unavailable. ESP32 boards with a SIM card slot can use this to connect to NodeFleet from anywhere with cell coverage. |
+| **Connection Mode** | A device setting that controls how it connects to NodeFleet: **Auto** (try WiFi first, fall back to internet), **Local** (WiFi only), or **Remote** (internet only). |
+| **MQTT**       | A lightweight messaging protocol commonly used in IoT. NodeFleet uses it to publish device data to external tools like Grafana or Home Assistant. |
+| **Captive Portal** | The setup page that appears on your phone when you connect to the device's "NodeFleet-Setup" WiFi network. Used to configure WiFi, server address, and pairing code without editing any code. |
 
 ---
 
@@ -437,4 +520,4 @@ Once you are comfortable with the basics, explore these resources to go deeper:
 
 ---
 
-*Last updated: 2026-03-29*
+*Last updated: 2026-03-30*
