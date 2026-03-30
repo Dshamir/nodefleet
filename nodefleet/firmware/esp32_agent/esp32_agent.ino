@@ -232,11 +232,13 @@ void setup() {
         }
     }
 
-    // Initialize MQTT client using resolved config
+    // Initialize MQTT client (local mode only — raw TCP to Mosquitto 1883)
+    // Remote devices send telemetry via WebSocket; external subscribers
+    // reach MQTT via wss://nodefleet.ngrok.dev/mqtt (nginx → Mosquitto WS)
 #if USE_MQTT
-    if (device_state.wifi_connected || device_state.modem_connected) {
-        String mqtt_broker = server_cfg.mqtt_host;
-        uint16_t mqtt_port = server_cfg.mqtt_port;
+    if (server_cfg.mode == "local") {
+        String mqtt_broker = MQTT_BROKER_HOST;
+        uint16_t mqtt_port = MQTT_BROKER_PORT;
 
         // Check NVS for custom MQTT settings (from provisioning portal)
         String nvs_broker, nvs_port_str;
@@ -249,6 +251,8 @@ void setup() {
 
         mqtt_client.begin(mqtt_broker.c_str(), mqtt_port,
                           device_state.is_paired ? device_state.device_token.substring(device_state.device_token.length() - 8).c_str() : "unregistered");
+    } else {
+        LOG_INFO("MQTT skipped in remote mode — telemetry via WebSocket");
     }
 #endif
 

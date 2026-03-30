@@ -6,6 +6,14 @@
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+/**
+ * NodeFleet MQTT client — local TCP mode.
+ *
+ * Connects directly to Mosquitto broker via TCP (port 1883) when on local WiFi.
+ * For remote/LTE devices, MQTT data is sent via the WebSocket connection instead
+ * (ws-server bridges to MQTT). External subscribers reach the broker via
+ * wss://nodefleet.ngrok.dev/mqtt (nginx proxies to Mosquitto WS port 9001).
+ */
 class NodeFleetMQTT {
 public:
     NodeFleetMQTT();
