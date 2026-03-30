@@ -80,6 +80,22 @@ DeviceState device_state = {
     .frame_count = 0
 };
 
+// ============================================================================
+// Resolved Server Configuration (local vs remote)
+// ============================================================================
+typedef struct {
+    String host;
+    uint16_t ws_port;
+    uint16_t http_port;
+    bool use_ssl;
+    bool use_mqtt;
+    String mqtt_host;
+    uint16_t mqtt_port;
+    String mode;  // "local" or "remote"
+} ServerConfig;
+
+ServerConfig server_cfg;
+
 // Dynamic power profile flags
 bool gps_active = true;
 bool camera_active = true;
@@ -104,6 +120,7 @@ void loop();
 void initializeHardware();
 void initializeWiFi();
 void initialize4G();
+void resolveServerConfig();
 void pairDevice();
 void handleIncomingCommand(const JsonDocument& cmd);
 void captureAndUploadPhoto();
@@ -202,29 +219,32 @@ void setup() {
     // Initialize WebSocket with callback
     ws_client.setMessageCallback(handleIncomingCommand);
 
-    // Try to connect to server
+    // Resolve connection mode (local WiFi vs remote ngrok/LTE)
     if (device_state.wifi_connected || device_state.modem_connected) {
+        resolveServerConfig();
+
         if (!device_state.is_paired) {
             pairDevice();
         } else {
-            // Connect WebSocket
-            ws_client.connect(device_state.device_token);
+            // Connect WebSocket using resolved config
+            ws_client.connect(device_state.device_token, server_cfg.use_ssl,
+                              server_cfg.host, server_cfg.ws_port);
         }
     }
 
-    // Initialize MQTT client
+    // Initialize MQTT client using resolved config
 #if USE_MQTT
-    if (device_state.wifi_connected) {
-        String mqtt_broker = MQTT_BROKER_HOST;
-        uint16_t mqtt_port = MQTT_BROKER_PORT;
+    if (device_state.wifi_connected || device_state.modem_connected) {
+        String mqtt_broker = server_cfg.mqtt_host;
+        uint16_t mqtt_port = server_cfg.mqtt_port;
 
         // Check NVS for custom MQTT settings (from provisioning portal)
-        String nvs_broker, nvs_port;
+        String nvs_broker, nvs_port_str;
         if (storage.nvs_loadConfig("mqtt_broker", nvs_broker) && nvs_broker.length() > 0) {
             mqtt_broker = nvs_broker;
         }
-        if (storage.nvs_loadConfig("mqtt_port", nvs_port) && nvs_port.length() > 0) {
-            mqtt_port = nvs_port.toInt();
+        if (storage.nvs_loadConfig("mqtt_port", nvs_port_str) && nvs_port_str.length() > 0) {
+            mqtt_port = nvs_port_str.toInt();
         }
 
         mqtt_client.begin(mqtt_broker.c_str(), mqtt_port,
@@ -453,6 +473,74 @@ void initialize4G() {
 }
 
 // ============================================================================
+// Connection Mode Resolver
+// ============================================================================
+
+void resolveServerConfig() {
+    String mode = CONNECTION_MODE;
+
+    // Check NVS for provisioned connection mode override
+    String nvs_mode;
+    if (storage.nvs_loadConfig("conn_mode", nvs_mode) && nvs_mode.length() > 0) {
+        mode = nvs_mode;
+    }
+
+    // Check NVS for provisioned ngrok domain override
+    String ngrok_domain = NGROK_DOMAIN;
+    String nvs_domain;
+    if (storage.nvs_loadConfig("ngrok_domain", nvs_domain) && nvs_domain.length() > 0) {
+        ngrok_domain = nvs_domain;
+    }
+
+    bool use_local = false;
+
+    if (mode == "local") {
+        use_local = true;
+    } else if (mode == "remote") {
+        use_local = false;
+    } else {
+        // "auto" mode: use local if WiFi is connected and server is reachable
+        if (device_state.wifi_connected) {
+            // Quick TCP probe to local server
+            WiFiClient probe;
+            if (probe.connect(SERVER_HOST, SERVER_PORT, 3000)) {
+                probe.stop();
+                use_local = true;
+                LOG_INFO("Auto-mode: local server reachable, using local connection");
+            } else {
+                LOG_INFO("Auto-mode: local server unreachable, using remote connection");
+            }
+        } else {
+            LOG_INFO("Auto-mode: no WiFi, using remote connection via LTE");
+        }
+    }
+
+    if (use_local) {
+        server_cfg.host = SERVER_HOST;
+        server_cfg.ws_port = SERVER_PORT;
+        server_cfg.http_port = SERVER_PORT_HTTP;
+        server_cfg.use_ssl = false;
+        server_cfg.use_mqtt = true;
+        server_cfg.mqtt_host = MQTT_BROKER_HOST;
+        server_cfg.mqtt_port = MQTT_BROKER_PORT;
+        server_cfg.mode = "local";
+    } else {
+        server_cfg.host = ngrok_domain;
+        server_cfg.ws_port = NGROK_PORT;
+        server_cfg.http_port = NGROK_PORT;
+        server_cfg.use_ssl = true;
+        server_cfg.use_mqtt = true;  // MQTT over WebSocket through ngrok
+        server_cfg.mqtt_host = ngrok_domain;
+        server_cfg.mqtt_port = NGROK_PORT;
+        server_cfg.mode = "remote";
+    }
+
+    LOG_INFO("Server config resolved: mode=%s host=%s ws_port=%d ssl=%s",
+             server_cfg.mode.c_str(), server_cfg.host.c_str(),
+             server_cfg.ws_port, server_cfg.use_ssl ? "yes" : "no");
+}
+
+// ============================================================================
 // Device Pairing
 // ============================================================================
 
@@ -474,12 +562,19 @@ void pairDevice() {
 
     LOG_VERBOSE("Pairing request: %s", payload.c_str());
 
-    // Make HTTP POST request to pairing endpoint
+    // Make HTTP POST request to pairing endpoint using resolved config
     HTTPClient http;
-    String url = String("http://") + SERVER_HOST + ":" + String(SERVER_PORT_HTTP) + DEVICE_PAIR_URL;
+    String protocol = server_cfg.use_ssl ? "https" : "http";
+    String url = protocol + "://" + server_cfg.host + ":" + String(server_cfg.http_port) + DEVICE_PAIR_URL;
     LOG_INFO("Pairing URL: %s", url.c_str());
 
-    http.begin(url);
+    if (server_cfg.use_ssl) {
+        WiFiClientSecure* client = new WiFiClientSecure();
+        client->setInsecure();  // Skip cert verification for ngrok
+        http.begin(*client, url);
+    } else {
+        http.begin(url);
+    }
     http.addHeader("Content-Type", "application/json");
 
     int http_code = http.POST(payload);
@@ -498,8 +593,9 @@ void pairDevice() {
 
             LOG_INFO("Device paired successfully! Token: %s", device_state.device_token.c_str());
 
-            // Connect WebSocket
-            ws_client.connect(device_state.device_token);
+            // Connect WebSocket using resolved config
+            ws_client.connect(device_state.device_token, server_cfg.use_ssl,
+                              server_cfg.host, server_cfg.ws_port);
 
             setLEDStatus(1);  // Connected LED pattern
         } else {
