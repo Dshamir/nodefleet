@@ -45,6 +45,9 @@ String WiFiProvisioner::getServerPort() { return cfg_server_port; }
 String WiFiProvisioner::getMQTTBroker() { return cfg_mqtt_broker; }
 String WiFiProvisioner::getMQTTPort() { return cfg_mqtt_port; }
 String WiFiProvisioner::getPairingCode() { return cfg_pairing_code; }
+String WiFiProvisioner::getNgrokDomain() { return cfg_ngrok_domain; }
+String WiFiProvisioner::getConnectionMode() { return cfg_conn_mode; }
+String WiFiProvisioner::getApiKey() { return cfg_api_key; }
 
 void WiFiProvisioner::handleRoot() {
     server.send(200, "text/html", generateHTML());
@@ -69,10 +72,13 @@ void WiFiProvisioner::handleSave() {
     cfg_mqtt_broker = server.arg("mqtt_broker");
     cfg_mqtt_port = server.arg("mqtt_port");
     cfg_pairing_code = server.arg("pairing_code");
+    cfg_ngrok_domain = server.arg("ngrok_domain");
+    cfg_conn_mode = server.arg("conn_mode");
+    cfg_api_key = server.arg("api_key");
 
-    LOG_INFO("Provisioning saved: SSID=%s Server=%s:%s MQTT=%s:%s",
+    LOG_INFO("Provisioning saved: SSID=%s Server=%s:%s ngrok=%s mode=%s",
              cfg_ssid.c_str(), cfg_server_host.c_str(), cfg_server_port.c_str(),
-             cfg_mqtt_broker.c_str(), cfg_mqtt_port.c_str());
+             cfg_ngrok_domain.c_str(), cfg_conn_mode.c_str());
 
     String html = R"(<!DOCTYPE html><html><head>
 <meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
@@ -103,8 +109,8 @@ String WiFiProvisioner::generateHTML() {
         ".section{margin-bottom:1.5rem;padding-bottom:1rem;border-bottom:1px solid #334155}"
         ".section-title{color:#38bdf8;font-size:0.8rem;text-transform:uppercase;letter-spacing:1px;margin-bottom:0.8rem}"
         "label{display:block;color:#94a3b8;font-size:0.85rem;margin-bottom:0.3rem}"
-        "input{width:100%;padding:0.6rem;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:0.9rem;margin-bottom:0.8rem}"
-        "input:focus{outline:none;border-color:#38bdf8}"
+        "input,select{width:100%;padding:0.6rem;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:0.9rem;margin-bottom:0.8rem}"
+        "input:focus,select:focus{outline:none;border-color:#38bdf8}"
         "button{width:100%;padding:0.8rem;background:#2563eb;color:white;border:none;border-radius:8px;font-size:1rem;cursor:pointer;font-weight:600}"
         "button:hover{background:#1d4ed8}"
         "</style></head><body><div class='card'>"
@@ -123,7 +129,19 @@ String WiFiProvisioner::generateHTML() {
         "<label>API Port</label>"
         "<input type='text' name='server_port' value='" + String(SERVER_PORT_HTTP) + "' placeholder='50300'>"
         "</div>"
-        "<div class='section'><div class='section-title'>MQTT Broker</div>"
+        "<div class='section'><div class='section-title'>Remote Access</div>"
+        "<label>ngrok Domain</label>"
+        "<input type='text' name='ngrok_domain' value='" + String(NGROK_DOMAIN) + "' placeholder='nodefleet.ngrok.dev'>"
+        "<label>Connection Mode</label>"
+        "<select name='conn_mode'>"
+        "<option value='auto' selected>Auto (try local, fall back to remote)</option>"
+        "<option value='local'>Local only (WiFi direct)</option>"
+        "<option value='remote'>Remote only (ngrok/LTE)</option>"
+        "</select>"
+        "<label>API Key (optional)</label>"
+        "<input type='text' name='api_key' placeholder='nf_xxxxxxxx_xxxxxxxx'>"
+        "</div>"
+        "<div class='section'><div class='section-title'>MQTT Broker (optional override)</div>"
         "<label>Broker Host</label>"
         "<input type='text' name='mqtt_broker' value='" + String(MQTT_BROKER_HOST) + "' placeholder='192.168.0.19'>"
         "<label>Broker Port</label>"

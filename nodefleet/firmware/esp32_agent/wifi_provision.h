@@ -33,6 +33,9 @@ public:
     String getMQTTBroker();
     String getMQTTPort();
     String getPairingCode();
+    String getNgrokDomain();
+    String getConnectionMode();
+    String getApiKey();
 
 private:
     WebServer server;
@@ -44,6 +47,9 @@ private:
     String cfg_mqtt_broker;
     String cfg_mqtt_port;
     String cfg_pairing_code;
+    String cfg_ngrok_domain;
+    String cfg_conn_mode;
+    String cfg_api_key;
 
     void handleRoot();
     void handleSave();

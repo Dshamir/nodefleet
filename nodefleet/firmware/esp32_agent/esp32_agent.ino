@@ -431,6 +431,16 @@ void initializeWiFi() {
             if (wifi_provisioner.getPairingCode().length() > 0) {
                 storage.nvs_savePairingCode(wifi_provisioner.getPairingCode());
             }
+            // Save remote access settings
+            if (wifi_provisioner.getNgrokDomain().length() > 0) {
+                storage.nvs_saveConfig("ngrok_domain", wifi_provisioner.getNgrokDomain());
+            }
+            if (wifi_provisioner.getConnectionMode().length() > 0) {
+                storage.nvs_saveConfig("conn_mode", wifi_provisioner.getConnectionMode());
+            }
+            if (wifi_provisioner.getApiKey().length() > 0) {
+                storage.nvs_saveConfig("api_key", wifi_provisioner.getApiKey());
+            }
 
             LOG_INFO("Provisioning complete. Rebooting to apply...");
             delay(1000);
