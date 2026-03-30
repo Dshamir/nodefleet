@@ -263,3 +263,22 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 - WebSocket: heartbeat, GPS, commands, messaging (all real-time small payloads)
 - HTTP: binary media upload (photos, audio, video recordings) via server proxy to MinIO
 - MQTT: local TCP for device (PubSubClient), WebSocket for external subscribers (through ngrok)
+
+### Verification Results (2026-03-30)
+
+All 12 tests passed, 0 failures, 0 fixes required.
+
+| Test | Path | Result |
+|------|------|--------|
+| Upload Mode 1 (JSON presigned URL) | local | PASS |
+| Upload Mode 2 (binary proxy) | local | PASS |
+| File verified in MinIO | local | PASS |
+| Auth rejection (no token) | local | PASS |
+| Empty body rejection | local | PASS |
+| Binary upload | ngrok | PASS |
+| Presigned URL | ngrok | PASS |
+| MQTT-WS connect/pub/sub | local | PASS |
+| MQTT-WSS connect/pub/sub | ngrok | PASS |
+| Firmware compilation | PlatformIO | PASS (RAM 16%, Flash 32.4%) |
+| WebSocket /device + heartbeat | ngrok | PASS |
+| Pairing endpoint | ngrok | PASS |

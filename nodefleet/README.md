@@ -63,6 +63,19 @@ After the services are running:
 | Prometheus     | 50090     | 9090           | Metrics collection       |
 | Grafana        | 50030     | 3000           | Monitoring dashboards    |
 
+## Remote Access (ngrok)
+
+Devices can connect from anywhere via LTE using the single ngrok domain:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `wss://nodefleet.ngrok.dev/device` | Device WebSocket (heartbeat, GPS, commands) |
+| `https://nodefleet.ngrok.dev/api/devices/upload` | Binary media upload (photos, audio) |
+| `https://nodefleet.ngrok.dev/api/devices/pair` | Device pairing |
+| `wss://nodefleet.ngrok.dev/mqtt` | MQTT-over-WebSocket (Grafana, Home Assistant, n8n) |
+
+Firmware supports dual-mode (`CONNECTION_MODE` in `config.h`): `"auto"` tries local WiFi first, falls back to ngrok/LTE. Configure via the WiFi provisioning captive portal ("NodeFleet-Setup" AP).
+
 ## Default Test Credentials
 
 | Field    | Value                |
