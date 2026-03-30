@@ -1,6 +1,6 @@
 # NodeFleet - Known Issues, Gaps & Recommendations
 
-Last updated: 2026-03-29
+Last updated: 2026-03-30
 
 ---
 
@@ -69,15 +69,15 @@ Camera I2C/SCCB initialization succeeds (sensor detected, `esp_camera_init()` re
 
 **Remaining:** SIM detection still fails via UART — cellular data (as opposed to WiFi) is unavailable until SIM check succeeds.
 
-### 3. GPS GNSS Module Not Responding — Pending Monday
+### 3. GPS GNSS Module Not Responding — SIM Recovered, GPS Pending
 
-**Status:** Open (2026-03-28 evening)
+**Status:** Partially resolved (2026-03-30). SIM now detected after USB power cycle. GPS (`AT+CGPSINFO`) still returns ERROR — needs `AT+CGPS=1` or further power cycle.
 
 `AT+CGPSINFO` and `AT+CGPS=1` return ERROR on both UART and USB ports. This started after an `AT+CFUN=1,1` modem reset disconnected the USB. The modem's GNSS subsystem needs a physical power cycle (unplug/replug USB) to recover.
 
 **GPS data in database is from 3/27** when GNSS was working. New GPS records will resume after power cycle.
 
-**Monday action:** Unplug and replug the USB cable to power-cycle the modem.
+**Monday action (done 2026-03-30):** USB replug restored SIM detection. TELUS LTE registered (CEREG 0,1, IP 25.99.44.248, signal -79 dBm). GPS still needs `AT+CGPS=1` restart.
 
 ---
 
@@ -140,9 +140,9 @@ The board has 8MB OPI PSRAM but `psramFound()` returns false with the current Pl
 
 **Fix:** `HTTPUpdate` library integrated in `updateFirmware()`. Device downloads `.bin` from presigned MinIO URL and applies OTA. GitHub Actions CI pipeline compiles firmware on every push.
 
-### 6. Audio Recording — Pending Monday
+### 6. Audio Recording — Hardware Pending
 
-**Status:** Firmware coded, hardware arriving Monday
+**Status:** Firmware coded, hardware arriving (INMP441 mic)
 
 I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL upload to MinIO. INMP441 MEMS microphone pins configured (BCK=GPIO2, WS=GPIO3, DIN=GPIO1). Set `ENABLE_AUDIO 1` after connecting mic.
 
@@ -235,3 +235,31 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 | 7 commands only | 12 commands: added read_config, factory_reset, set_heartbeat_interval, power_mode, get_network_info |
 | No firmware version tracking | `firmware_version` sent in heartbeat, ws-server updates DB |
 | No token refresh handling | Firmware handles `token_refresh` WebSocket message, saves new JWT to NVS |
+| MinIO unreachable from LTE | Binary upload proxy: POST binary to `/api/devices/upload`, server streams to MinIO |
+| No remote/LTE connectivity | Dual-mode: auto-detect local WiFi vs remote ngrok/LTE with runtime SSL |
+| MQTT local-only | MQTT-over-WebSocket via `wss://nodefleet.ngrok.dev/mqtt` (nginx → Mosquitto 9001) |
+| No remote provisioning fields | Captive portal now configures ngrok domain, connection mode, API key |
+| S3 credentials not reading .env | s3.ts now reads S3_ACCESS_KEY/S3_SECRET_KEY alongside AWS_* vars |
+
+---
+
+## Remote Access Architecture (2026-03-30)
+
+**Domain:** `nodefleet.ngrok.dev` (single domain, all devices)
+
+| Endpoint | Protocol | Purpose |
+|----------|----------|---------|
+| `wss://nodefleet.ngrok.dev/device` | WebSocket | Device real-time connection (heartbeat, GPS, commands) |
+| `https://nodefleet.ngrok.dev/api/devices/*` | HTTPS | Device pairing, binary media upload, HTTP heartbeat |
+| `wss://nodefleet.ngrok.dev/mqtt` | MQTT-over-WS | Mosquitto broker (external subscribers: Grafana, HA, n8n) |
+| `wss://nodefleet.ngrok.dev/dashboard` | WebSocket | Dashboard real-time updates |
+
+**Connection modes (firmware config.h `CONNECTION_MODE`):**
+- `"auto"` — Try local server first (TCP probe), fall back to ngrok/LTE
+- `"local"` — Always use `SERVER_HOST:SERVER_PORT` (WiFi only)
+- `"remote"` — Always use `NGROK_DOMAIN:443` with SSL
+
+**Protocol strategy:**
+- WebSocket: heartbeat, GPS, commands, messaging (all real-time small payloads)
+- HTTP: binary media upload (photos, audio, video recordings) via server proxy to MinIO
+- MQTT: local TCP for device (PubSubClient), WebSocket for external subscribers (through ngrok)
