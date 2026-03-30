@@ -210,9 +210,10 @@ Click on any device name in the device list to open its **detail page**. The det
 
 ### GPS Tab
 
-- An interactive map showing the device's current and historical locations.
-- Route visualization showing where the device has traveled.
-- Data points include: latitude, longitude, speed, altitude, and satellite count.
+- **Status indicator** at the top shows whether GPS is active (green), stale (yellow), or missing (red), with the age of the last fix.
+- **Calibrate GPS** button — if GPS data stops updating, click this to restart the GPS module on the device. Wait 1–5 minutes for a new satellite fix.
+- **Help section** — click the info icon for step-by-step troubleshooting (sky view, cold start timing, when to reboot).
+- GPS trail table showing timestamp, coordinates, altitude, speed, and accuracy for each recorded location.
 
 ### Commands Tab
 

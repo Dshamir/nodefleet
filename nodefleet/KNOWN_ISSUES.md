@@ -239,6 +239,7 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 | No token refresh handling | Firmware handles `token_refresh` WebSocket message, saves new JWT to NVS |
 | GPS AT commands wrong for MNGV variant | enableGNSS/getGPSFix now try AT+CGPS* first, fall back to AT+CGNSSPWR/AT+CGNSSINFO |
 | GPS silently fails with no recovery | Auto-restart GNSS after 3 consecutive failures (5-min cooldown) |
+| GPS tab had no status indicator | Added visual badge (active/stale/no data), calibrate button, help section |
 | MinIO unreachable from LTE | Binary upload proxy: POST binary to `/api/devices/upload`, server streams to MinIO |
 | No remote/LTE connectivity | Dual-mode: auto-detect local WiFi vs remote ngrok/LTE with runtime SSL |
 | MQTT local-only | MQTT-over-WebSocket via `wss://nodefleet.ngrok.dev/mqtt` (nginx → Mosquitto 9001) |
