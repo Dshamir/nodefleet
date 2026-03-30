@@ -23,6 +23,7 @@ public:
     // GPS Functions
     bool enableGNSS();
     bool disableGNSS();
+    bool restartGNSS();  // Soft restart: disable → delay → enable
     bool getGPSFix(float& latitude, float& longitude, float& altitude, float& accuracy,
                    float& speed, float& heading, int& satellites);
 

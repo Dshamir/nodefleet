@@ -176,30 +176,53 @@ bool SIM7670GModem::enableGNSS() {
     String response;
     LOG_INFO("Enabling GNSS (GPS)...");
 
-    // SIM7670G uses AT+CGPS=1 to enable GPS
-    // First try to enable, ignore error if already enabled
-    sendAT("AT+CGPS=1", response, 2000);
+    // Try AT+CGPS=1 first (works on most SIM7670G variants)
+    if (sendAT("AT+CGPS=1", response, 2000)) {
+        delay(2000);
+        LOG_INFO("GNSS enabled via AT+CGPS=1");
+        return true;
+    }
 
-    delay(2000);
-    LOG_INFO("GNSS enabled");
-    return true;
+    // Fallback: AT+CGNSSPWR=1 (required on SIM7670G-MNGV variant)
+    LOG_WARN("AT+CGPS=1 failed, trying AT+CGNSSPWR=1...");
+    if (sendAT("AT+CGNSSPWR=1", response, 3000)) {
+        sendAT("AT+CGNSSMODE=1", response, 2000);  // Enable GPS+GLONASS
+        delay(2000);
+        LOG_INFO("GNSS enabled via AT+CGNSSPWR=1");
+        return true;
+    }
+
+    LOG_ERROR("Failed to enable GNSS with both commands");
+    return false;
 }
 
 bool SIM7670GModem::disableGNSS() {
     String response;
-    return sendAT("AT+CGPS=0", response, 2000);
+    if (sendAT("AT+CGPS=0", response, 2000)) return true;
+    return sendAT("AT+CGNSSPWR=0", response, 2000);
+}
+
+bool SIM7670GModem::restartGNSS() {
+    LOG_WARN("Restarting GNSS subsystem...");
+    disableGNSS();
+    delay(2000);
+    return enableGNSS();
 }
 
 bool SIM7670GModem::getGPSFix(float& latitude, float& longitude, float& altitude, float& accuracy,
                                float& speed, float& heading, int& satellites) {
     String response;
 
-    // SIM7670G uses AT+CGPSINFO instead of AT+CGNSINF
-    if (!sendAT("AT+CGPSINFO", response, 3000)) {
+    // Try AT+CGPSINFO first, fall back to AT+CGNSSINFO
+    bool got_response = sendAT("AT+CGPSINFO", response, 3000);
+    if (!got_response || response.indexOf("ERROR") >= 0) {
+        got_response = sendAT("AT+CGNSSINFO", response, 3000);
+    }
+    if (!got_response) {
         return false;
     }
 
-    // Response format: +CGPSINFO: ddmm.mmmm,N/S,dddmm.mmmm,E/W,date,time,alt,speed,course
+    // Response format: +C[GPS|GNSS]INFO: ddmm.mmmm,N/S,dddmm.mmmm,E/W,date,time,alt,speed,course
     // Example: +CGPSINFO: 4531.0216,N,07338.5976,W,270326,191126.000,61.6,0.54,144.40
     // Empty response means no fix: +CGPSINFO: ,,,,,,,,
 

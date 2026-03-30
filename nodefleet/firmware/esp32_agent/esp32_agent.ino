@@ -107,6 +107,12 @@ uint32_t last_gps_update_ms = 0;
 uint32_t last_status_report_ms = 0;
 uint32_t boot_time_ms = 0;
 
+// GPS auto-recovery
+uint32_t gps_consecutive_failures = 0;
+uint32_t last_gnss_restart_ms = 0;
+#define GPS_FAILURE_THRESHOLD 3        // Restart GNSS after 3 consecutive failures
+#define GNSS_RESTART_COOLDOWN_MS 300000 // 5 min between restart attempts
+
 #if ENABLE_WATCHDOG
 hw_timer_t* watchdog_timer = NULL;
 #endif
@@ -1163,9 +1169,12 @@ void updateGPS() {
     int sats;
     if (modem.getGPSFix(lat, lon, alt, acc, spd, hdg, sats)) {
         device_state.has_gps_fix = true;
+        gps_consecutive_failures = 0;  // Reset failure counter on success
         ws_client.sendGPS(lat, lon, alt, acc, spd, hdg, sats);
 #if USE_MQTT
-        mqtt_client.publishGPS(lat, lon, alt, spd, hdg, sats);
+        if (server_cfg.mode == "local") {
+            mqtt_client.publishGPS(lat, lon, alt, spd, hdg, sats);
+        }
 #endif
         LOG_INFO("GPS: %.4f, %.4f (alt: %.1f m, sats: %d)", lat, lon, alt, sats);
 
@@ -1183,6 +1192,18 @@ void updateGPS() {
         }
     } else {
         device_state.has_gps_fix = false;
+        gps_consecutive_failures++;
+
+        // Auto-recovery: restart GNSS after consecutive failures (with cooldown)
+        uint32_t now = millis();
+        if (gps_consecutive_failures >= GPS_FAILURE_THRESHOLD &&
+            (now - last_gnss_restart_ms >= GNSS_RESTART_COOLDOWN_MS)) {
+            LOG_WARN("GPS: %d consecutive failures — restarting GNSS subsystem",
+                     gps_consecutive_failures);
+            modem.restartGNSS();
+            last_gnss_restart_ms = now;
+            gps_consecutive_failures = 0;
+        }
     }
 }
 
