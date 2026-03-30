@@ -10,7 +10,7 @@
 #define USE_4G            1  // 1 = try 4G modem, 0 = skip 4G
 
 // ============================================================================
-// Server Configuration
+// Server Configuration — Local (WiFi direct)
 // ============================================================================
 #define SERVER_HOST       "192.168.0.19"
 #define SERVER_PORT       50081  // WS server port (local)
@@ -18,6 +18,16 @@
 #define DEVICE_PAIR_URL   "/api/devices/pair"
 #define DEVICE_WS_URL     "/device"  // WebSocket endpoint
 #define USE_SSL           0  // 0 = plain HTTP/WS (local), 1 = HTTPS/WSS (ngrok)
+
+// ============================================================================
+// Server Configuration — Remote (ngrok/LTE)
+// ============================================================================
+#define NGROK_DOMAIN      "nodefleet.ngrok.dev"
+#define NGROK_PORT        443   // HTTPS/WSS through ngrok
+// Connection mode: "auto" = try local first, fall back to remote
+//                  "local" = always use SERVER_HOST (WiFi only)
+//                  "remote" = always use NGROK_DOMAIN (LTE/remote)
+#define CONNECTION_MODE   "auto"
 
 // ============================================================================
 // MQTT Configuration
