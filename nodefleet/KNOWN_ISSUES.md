@@ -69,15 +69,17 @@ Camera I2C/SCCB initialization succeeds (sensor detected, `esp_camera_init()` re
 
 **Remaining:** SIM detection still fails via UART — cellular data (as opposed to WiFi) is unavailable until SIM check succeeds.
 
-### 3. GPS GNSS Module Not Responding — SIM Recovered, GPS Pending
+### 3. GPS GNSS Module Not Responding — RESOLVED
 
-**Status:** Partially resolved (2026-03-30). SIM now detected after USB power cycle. GPS (`AT+CGPSINFO`) still returns ERROR — needs `AT+CGPS=1` or further power cycle.
+**Status:** Fixed (2026-03-30). Root cause: SIM7670G-MNGV variant requires `AT+CGNSSPWR=1` (not `AT+CGPS=1`) to enable GNSS. After modem crash, both commands failed. Fix: `AT+CRESET` (full modem hardware reset) restored GNSS. Firmware now tries both command variants and auto-restarts GNSS after 3 consecutive failures.
 
 `AT+CGPSINFO` and `AT+CGPS=1` return ERROR on both UART and USB ports. This started after an `AT+CFUN=1,1` modem reset disconnected the USB. The modem's GNSS subsystem needs a physical power cycle (unplug/replug USB) to recover.
 
 **GPS data in database is from 3/27** when GNSS was working. New GPS records will resume after power cycle.
 
-**Monday action (done 2026-03-30):** USB replug restored SIM detection. TELUS LTE registered (CEREG 0,1, IP 25.99.44.248, signal -79 dBm). GPS still needs `AT+CGPS=1` restart.
+**Fix timeline:**
+- 2026-03-30 AM: USB replug restored SIM/LTE (TELUS, CEREG 0,1, -79 dBm)
+- 2026-03-30 PM: `AT+CRESET` restored GNSS subsystem. `AT+CGNSSPWR=1` → OK. Firmware updated with dual-command fallback and auto-recovery.
 
 ---
 
@@ -235,6 +237,8 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 | 7 commands only | 12 commands: added read_config, factory_reset, set_heartbeat_interval, power_mode, get_network_info |
 | No firmware version tracking | `firmware_version` sent in heartbeat, ws-server updates DB |
 | No token refresh handling | Firmware handles `token_refresh` WebSocket message, saves new JWT to NVS |
+| GPS AT commands wrong for MNGV variant | enableGNSS/getGPSFix now try AT+CGPS* first, fall back to AT+CGNSSPWR/AT+CGNSSINFO |
+| GPS silently fails with no recovery | Auto-restart GNSS after 3 consecutive failures (5-min cooldown) |
 | MinIO unreachable from LTE | Binary upload proxy: POST binary to `/api/devices/upload`, server streams to MinIO |
 | No remote/LTE connectivity | Dual-mode: auto-detect local WiFi vs remote ngrok/LTE with runtime SSL |
 | MQTT local-only | MQTT-over-WebSocket via `wss://nodefleet.ngrok.dev/mqtt` (nginx → Mosquitto 9001) |
