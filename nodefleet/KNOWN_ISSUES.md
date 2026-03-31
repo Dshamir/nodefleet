@@ -240,6 +240,8 @@ I2S DMA recording at 16kHz/16-bit mono, WAV header creation, presigned URL uploa
 | GPS AT commands wrong for MNGV variant | enableGNSS/getGPSFix now try AT+CGPS* first, fall back to AT+CGNSSPWR/AT+CGNSSINFO |
 | GPS silently fails with no recovery | Auto-restart GNSS after 3 consecutive failures (5-min cooldown) |
 | GPS tab had no status indicator | Added visual badge (active/stale/no data), calibrate button, help section |
+| WiFi fail blocked LTE for 5 minutes | Skip provisioning portal when USE_4G enabled, go straight to modem init |
+| platformio.ini monitor_port wrong | Fixed: ACM4 is upload bridge (CH343), ACM1 is ESP32 USB-CDC console |
 | MinIO unreachable from LTE | Binary upload proxy: POST binary to `/api/devices/upload`, server streams to MinIO |
 | No remote/LTE connectivity | Dual-mode: auto-detect local WiFi vs remote ngrok/LTE with runtime SSL |
 | MQTT local-only | MQTT-over-WebSocket via `wss://nodefleet.ngrok.dev/mqtt` (nginx → Mosquitto 9001) |
