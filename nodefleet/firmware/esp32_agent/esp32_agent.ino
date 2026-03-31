@@ -415,6 +415,10 @@ void initializeWiFi() {
     } else {
         LOG_WARN("WiFi connection failed");
 #if ENABLE_WIFI_PROVISION
+        // If 4G modem is available, skip provisioning and use LTE instead
+        if (USE_4G) {
+            LOG_INFO("WiFi failed but 4G enabled — skipping provisioning, will use LTE");
+        } else {
         // Start captive portal for WiFi configuration
         LOG_INFO("Starting WiFi provisioning portal...");
         provisioning_mode = true;
@@ -460,6 +464,7 @@ void initializeWiFi() {
             wifi_provisioner.stopAP();
             provisioning_mode = false;
         }
+        } // end else (no 4G)
 #endif
     }
 }
