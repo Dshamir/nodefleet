@@ -7,8 +7,10 @@
 #endif
 
 #if ENABLE_SD_CARD
-#include <SD.h>
-#include <SPI.h>
+//#include <SD.h>
+//#include <SPI.h>
+#include <SD_MMC.h>
+#include <FS.h>
 #include <SPI.h>
 #endif
 
@@ -71,7 +73,7 @@ bool StorageManager::nvs_loadDeviceToken(String& token) {
         return false;
     }
 
-    char token_buf[256];
+    char token_buf[512];
     size_t len = sizeof(token_buf);
     err = nvs_get_str(handle, "device_token", token_buf, &len);
     nvs_close(handle);

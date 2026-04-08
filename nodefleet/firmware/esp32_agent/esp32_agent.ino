@@ -18,6 +18,7 @@
 #include "storage.h"
 #include "websocket_client.h"
 #include "battery.h"
+#include "INMP441.h"
 #if USE_MQTT
 #include "mqtt_client.h"
 #endif
@@ -29,6 +30,9 @@
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <HTTPUpdate.h>
+#include <SD_MMC.h>
+#include "esp_camera.h"
+#include "time.h"
 
 // ============================================================================
 // Global Objects
@@ -49,6 +53,13 @@ bool provisioning_mode = false;
 
 // OTA auto-check timing
 uint32_t last_ota_check_ms = 0;
+
+// Setup correct system time
+const char* ntpServer  = "pool.ntp.org";
+const long  gmtOffset_sec = -5 * 3600;  // Adjust for your timezone
+const int   daylightOffset_sec = 3600;  // Daylight savings
+// For saving
+struct tm timeinfo;
 
 // ============================================================================
 // Global State
@@ -168,7 +179,7 @@ void setup() {
 
     // Initialize NVS storage
     storage.nvs_begin("nodefleet");
-
+    
     // Load or use pairing code
     if (!storage.nvs_loadPairingCode(device_state.pairing_code)) {
         device_state.pairing_code = PAIRING_CODE;
@@ -221,6 +232,18 @@ void setup() {
     if (USE_4G) {
         initialize4G();
     }
+    
+    configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+
+    if(getLocalTime(&timeinfo)){
+        // Print formatted date and time (e.g., Tuesday, 2023-10-24 14:30:05)
+        char timeString[64];
+        strftime(timeString, sizeof(timeString), "%Y-%m-%d %H:%M:%S", &timeinfo);
+        LOG_INFO("%s",timeString); 
+    } else{
+        LOG_INFO("No time available"); 
+    }
+
 
     // Initialize WebSocket with callback
     ws_client.setMessageCallback(handleIncomingCommand);
@@ -242,7 +265,9 @@ void setup() {
     // Remote devices send telemetry via WebSocket; external subscribers
     // reach MQTT via wss://nodefleet.ngrok.dev/mqtt (nginx → Mosquitto WS)
 #if USE_MQTT
+    LOG_INFO("MQTT");
     if (server_cfg.mode == "local") {
+        LOG_INFO("MQTT LOCAL");
         String mqtt_broker = MQTT_BROKER_HOST;
         uint16_t mqtt_port = MQTT_BROKER_PORT;
 
@@ -857,10 +882,24 @@ void captureAndUploadPhoto() {
         return;
     }
 
-    LOG_INFO("Photo captured: %d bytes", fb.length);
-
+    
     // Step 1: Request presigned upload URL from server
-    String filename = "photo_" + String(millis()) + ".jpg";
+    //String filename = "photo_" + String(millis()) + ".jpg";
+    
+    String filename = "";
+    if (getLocalTime(&timeinfo)){
+        char buffer[64];
+        strftime(buffer, sizeof(buffer), "photo_%Y-%m-%d_%H_%M_%S.jpg", &timeinfo);
+        filename = String(buffer); 
+    } else {
+        filename = "photo_" + String(millis()) + ".jpg";
+    }
+    
+    LOG_INFO("Photo captured: %d bytes", fb.length);
+    char filename_path[40];
+    snprintf(filename_path, sizeof(filename_path), "/photos/%s",filename.c_str());
+    storage.sd_writeFile(filename_path, fb.buffer, fb.length); //TODO remove after testing
+    
 
     StaticJsonDocument<256> reqDoc;
     reqDoc["filename"] = filename;
@@ -889,7 +928,7 @@ void captureAndUploadPhoto() {
     String response = http.getString();
     http.end();
 
-    StaticJsonDocument<512> respDoc;
+    StaticJsonDocument<1024> respDoc;
     if (deserializeJson(respDoc, response) || !respDoc.containsKey("uploadUrl")) {
         LOG_ERROR("Invalid upload URL response");
         camera.releaseFrameBuffer(fb);
@@ -904,8 +943,9 @@ void captureAndUploadPhoto() {
     // Step 2: Upload JPEG directly to MinIO via presigned URL
     HTTPClient uploadHttp;
     uploadHttp.begin(uploadUrl);
+    LOG_INFO("PUT URL: %s", uploadUrl.c_str());
     uploadHttp.addHeader("Content-Type", "image/jpeg");
-
+    
     int uploadCode = uploadHttp.PUT(fb.buffer, fb.length);
 
     if (uploadCode >= 200 && uploadCode < 300) {
@@ -934,28 +974,25 @@ void captureAndUploadVideo() {
         LOG_ERROR("Camera not available");
         return;
     }
-
-    String video_filename = "/videos/video_" + String(millis()) + ".mjpeg";
-
-    if (ENABLE_SD_CARD && storage.sd_isReady()) {
-        // Capture 30 frames (about 1 second at 30fps)
-        for (int i = 0; i < 30; i++) {
-            FrameBuffer fb;
-            if (camera.captureJPEG(fb)) {
-                // Append JPEG frame to MJPEG file
-                storage.sd_appendFile(video_filename, fb.buffer, fb.length);
-                camera.releaseFrameBuffer(fb);
-            }
-            delay(33);  // ~30fps
-        }
-
-        LOG_INFO("Video saved: %s", video_filename.c_str());
+    String filename = "";
+    if (getLocalTime(&timeinfo)){
+        char buffer[64];
+        strftime(buffer, sizeof(buffer), "video_%Y-%m-%d_%H_%M_%S.avi", &timeinfo);
+        filename = String(buffer); 
+    } else {
+        filename = "video_" + String(millis()) + ".avi";
     }
+    char filename_path[40];
+    snprintf(filename_path, sizeof(filename_path),"/videos/%s",  filename.c_str());
+    
+    camera.recordVideoAVI(SD_MMC, filename_path); // 30 FPS set in camera.cpp
+    
+    LOG_INFO("Video saved: %s", filename.c_str());
 
     // Queue for upload if offline
     if (!device_state.wifi_connected && !device_state.modem_connected) {
         if (ENABLE_SD_CARD) {
-            storage.queue_addFile(video_filename, "video");
+            storage.queue_addFile(filename, "video");
         }
     }
 }
@@ -963,90 +1000,42 @@ void captureAndUploadVideo() {
 void recordAndUploadAudio() {
     LOG_INFO("Recording audio (%ds @ %dHz)...", AUDIO_DURATION_S, I2S_SAMPLE_RATE);
 
-#if ENABLE_AUDIO && I2S_BCK_PIN >= 0
-    #include <driver/i2s.h>
-
-    // Configure I2S
-    i2s_config_t i2s_config = {
-        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
-        .sample_rate = I2S_SAMPLE_RATE,
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
-        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
-        .dma_buf_count = 8,
-        .dma_buf_len = 1024,
-        .use_apll = false,
-    };
-
-    i2s_pin_config_t pin_config = {
-        .bck_io_num = I2S_BCK_PIN,
-        .ws_io_num = I2S_WS_PIN,
-        .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = I2S_DIN_PIN,
-    };
-
-    if (i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL) != ESP_OK) {
-        LOG_ERROR("I2S driver install failed");
-        return;
-    }
-    if (i2s_set_pin(I2S_NUM_0, &pin_config) != ESP_OK) {
-        LOG_ERROR("I2S pin config failed");
-        i2s_driver_uninstall(I2S_NUM_0);
-        return;
-    }
-
-    // Calculate buffer size: sample_rate * bytes_per_sample * duration
-    size_t total_bytes = I2S_SAMPLE_RATE * 2 * AUDIO_DURATION_S;  // 16-bit = 2 bytes
-    size_t wav_size = total_bytes + 44;  // WAV header is 44 bytes
-
-    uint8_t* audio_buf = (uint8_t*)malloc(wav_size);
-    if (!audio_buf) {
-        LOG_ERROR("Audio buffer allocation failed (%d bytes)", wav_size);
-        i2s_driver_uninstall(I2S_NUM_0);
-        return;
-    }
-
-    // Write WAV header
-    uint8_t* h = audio_buf;
-    memcpy(h, "RIFF", 4); h += 4;
-    uint32_t chunk_size = wav_size - 8;
-    memcpy(h, &chunk_size, 4); h += 4;
-    memcpy(h, "WAVE", 4); h += 4;
-    memcpy(h, "fmt ", 4); h += 4;
-    uint32_t subchunk1_size = 16;
-    memcpy(h, &subchunk1_size, 4); h += 4;
-    uint16_t audio_format = 1;  // PCM
-    memcpy(h, &audio_format, 2); h += 2;
-    uint16_t num_channels = I2S_CHANNELS;
-    memcpy(h, &num_channels, 2); h += 2;
-    uint32_t sample_rate = I2S_SAMPLE_RATE;
-    memcpy(h, &sample_rate, 4); h += 4;
-    uint32_t byte_rate = I2S_SAMPLE_RATE * I2S_CHANNELS * 2;
-    memcpy(h, &byte_rate, 4); h += 4;
-    uint16_t block_align = I2S_CHANNELS * 2;
-    memcpy(h, &block_align, 2); h += 2;
-    uint16_t bits_per_sample = 16;
-    memcpy(h, &bits_per_sample, 2); h += 2;
-    memcpy(h, "data", 4); h += 4;
-    memcpy(h, &total_bytes, 4); h += 4;
-
-    // Record audio via DMA
-    LOG_INFO("Recording...");
-    size_t bytes_read = 0;
-    size_t offset = 44;  // After WAV header
-    while (offset < wav_size) {
-        size_t chunk = 0;
-        i2s_read(I2S_NUM_0, audio_buf + offset, min((size_t)2048, wav_size - offset), &chunk, portMAX_DELAY);
-        offset += chunk;
-    }
-
-    i2s_driver_uninstall(I2S_NUM_0);
-    LOG_INFO("Recording complete: %d bytes", wav_size);
-
+//#if ENABLE_AUDIO && I2S_BCK_PIN >= 0
+//    #include <driver/i2s.h>
+    
     // Upload via presigned URL
-    String filename = "audio_" + String(millis()) + ".wav";
+    //String filename = "audio_" + String(millis()) + ".wav";
+    
+    
+    String filename = "";
+    if (getLocalTime(&timeinfo)){
+        char buffer[64];
+        strftime(buffer, sizeof(buffer), "audio_%Y-%m-%d_%H_%M_%S.wav", &timeinfo);
+        filename = String(buffer); 
+    } else {
+        filename = "audio_" + String(millis()) + ".wav";
+    }
+  
+    // Create /audio directory if needed
+    if (!SD_MMC.exists("/audio")) {
+        SD_MMC.mkdir("/audio");
+    }
+    
+    char filename_path[40];
+    snprintf(filename_path, sizeof(filename_path), "/audio/%s", filename.c_str());
 
+    
+    if (!inmp441_init()) {
+        LOG_INFO("INMP441 init failed!");
+        return;
+    }
+    
+    bool ok = inmp441_record_wav(SD_MMC, filename_path, AUDIO_DURATION_S);
+    
+    inmp441_deinit();
+    
+    // TODO update code below to send back to server
+    /*
     StaticJsonDocument<256> reqDoc;
     reqDoc["filename"] = filename;
     reqDoc["contentType"] = "audio/wav";
@@ -1094,9 +1083,11 @@ void recordAndUploadAudio() {
     }
 
     free(audio_buf);
-#else
-    LOG_WARN("Audio not enabled (ENABLE_AUDIO=0 or I2S pins not configured)");
-#endif
+    
+    */
+//#else
+//    LOG_WARN("Audio not enabled (ENABLE_AUDIO=0 or I2S pins not configured)");
+//#endif
 }
 
 void updateFirmware(const String& url) {

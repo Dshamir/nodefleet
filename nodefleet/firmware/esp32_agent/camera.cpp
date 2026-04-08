@@ -1,12 +1,188 @@
 #include "camera.h"
 #include "config.h"
-
+#include <SD_MMC.h>
 // Note: This implementation requires the ESP32-Camera library
 // If using OV2640 or OV5640 sensor via parallel interface
 
-#if ENABLE_CAMERA
+
 #include "esp_camera.h"
-#endif
+
+
+// AVI writer state
+static File aviFile;
+uint32_t aviFrameCount = 0;
+static uint32_t aviTotalSize = 0;
+static uint16_t aviWidth = 640;
+static uint16_t aviHeight = 480;
+
+void getResolutionDimensions(framesize_t fs, uint16_t &w, uint16_t &h) {
+  switch (fs) {
+    case FRAMESIZE_QQVGA: w = 160;  h = 120; break;
+    case FRAMESIZE_QVGA:  w = 320;  h = 240; break;
+    case FRAMESIZE_CIF:   w = 400;  h = 296; break;
+    case FRAMESIZE_VGA:   w = 640;  h = 480; break;
+    case FRAMESIZE_SVGA:  w = 800;  h = 600; break;
+    case FRAMESIZE_XGA:   w = 1024; h = 768; break;
+    default:              w = 640;  h = 480; break;
+  }
+}
+
+// ============================================================
+// AVI-MJPEG Writer
+// ============================================================
+
+static void aviWriteU32(uint32_t val) {
+  uint8_t buf[4] = {
+    (uint8_t)(val & 0xFF),
+    (uint8_t)((val >> 8) & 0xFF),
+    (uint8_t)((val >> 16) & 0xFF),
+    (uint8_t)((val >> 24) & 0xFF)
+  };
+  aviFile.write(buf, 4);
+}
+
+static void aviWriteU16(uint16_t val) {
+  uint8_t buf[2] = {
+    (uint8_t)(val & 0xFF),
+    (uint8_t)((val >> 8) & 0xFF)
+  };
+  aviFile.write(buf, 2);
+}
+
+static void aviWriteFourCC(const char* tag) {
+  aviFile.write((const uint8_t*)tag, 4);
+}
+
+static bool aviStart(fs::FS &fs, const char* filename) {
+  LOG_INFO("Open file %s",filename);
+  aviFile = fs.open(filename, FILE_WRITE);
+  if (!aviFile) {
+    LOG_ERROR("Failed to create AVI: ");
+    LOG_ERROR("%s",filename);
+    return false;
+  }
+
+  aviFrameCount = 0;
+  aviTotalSize = 0;
+  getResolutionDimensions(FRAMESIZE_VGA, aviWidth, aviHeight);
+
+  // Write 512-byte placeholder header (will be overwritten in finalize)
+  uint8_t zeros[512];
+  memset(zeros, 0, 512);
+  aviFile.write(zeros, 512);
+
+  return true;
+}
+
+static void aviWriteFrame(const uint8_t* jpegData, size_t len) {
+  aviWriteFourCC("00dc");
+  aviWriteU32((uint32_t)len);
+  aviFile.write(jpegData, len);
+
+  // Pad to even boundary
+  if (len & 1) {
+    uint8_t pad = 0;
+    aviFile.write(&pad, 1);
+    aviTotalSize += (uint32_t)len + 9;
+  } else {
+    aviTotalSize += (uint32_t)len + 8;
+  }
+
+  aviFrameCount++;
+}
+
+static void aviFinalize() {
+  if (!aviFile) return;
+
+  uint32_t moviSize = aviTotalSize + 4;
+  uint32_t usPerFrame = 1000000 / 30; //30fps
+
+  uint32_t hdrlSize = 4 + 64 + (4 + 8 + 64 + 48);
+  uint32_t strlSize = 4 + 64 + 48;
+  uint32_t riffSize = 4 + (8 + hdrlSize) + (8 + moviSize);
+
+  aviFile.seek(0);
+
+  // RIFF header
+  aviWriteFourCC("RIFF");
+  aviWriteU32(riffSize);
+  aviWriteFourCC("AVI ");
+
+  // LIST hdrl
+  aviWriteFourCC("LIST");
+  aviWriteU32(hdrlSize);
+  aviWriteFourCC("hdrl");
+
+  // avih (Main AVI Header) — 56 bytes
+  aviWriteFourCC("avih");
+  aviWriteU32(56);
+  aviWriteU32(usPerFrame);
+  aviWriteU32(0);
+  aviWriteU32(0);
+  aviWriteU32(0);
+  aviWriteU32(aviFrameCount);
+  aviWriteU32(0);
+  aviWriteU32(1);
+  aviWriteU32(0);
+  aviWriteU32(aviWidth);
+  aviWriteU32(aviHeight);
+  aviWriteU32(0); aviWriteU32(0);
+  aviWriteU32(0); aviWriteU32(0);
+
+  // LIST strl
+  aviWriteFourCC("LIST");
+  aviWriteU32(strlSize);
+  aviWriteFourCC("strl");
+
+  // strh (Stream Header) — 56 bytes
+  aviWriteFourCC("strh");
+  aviWriteU32(56);
+  aviWriteFourCC("vids");
+  aviWriteFourCC("MJPG");
+  aviWriteU32(0);
+  aviWriteU16(0);
+  aviWriteU16(0);
+  aviWriteU32(0);
+  aviWriteU32(1);
+  aviWriteU32(30); //30 fps
+  aviWriteU32(0);
+  aviWriteU32(aviFrameCount);
+  aviWriteU32(0);
+  aviWriteU32(0);
+  aviWriteU32(0);
+  aviWriteU16(0); aviWriteU16(0);
+  aviWriteU16(aviWidth);
+  aviWriteU16(aviHeight);
+
+  // strf (BITMAPINFOHEADER) — 40 bytes
+  aviWriteFourCC("strf");
+  aviWriteU32(40);
+  aviWriteU32(40);
+  aviWriteU32(aviWidth);
+  aviWriteU32(aviHeight);
+  aviWriteU16(1);
+  aviWriteU16(24);
+  aviWriteFourCC("MJPG");
+  aviWriteU32(aviWidth * aviHeight * 3);
+  aviWriteU32(0);
+  aviWriteU32(0);
+  aviWriteU32(0);
+  aviWriteU32(0);
+
+  // LIST movi header
+  aviWriteFourCC("LIST");
+  aviWriteU32(moviSize);
+  aviWriteFourCC("movi");
+
+  aviFile.close();
+
+  Serial.print("AVI finalized: ");
+  Serial.print(aviFrameCount);
+  Serial.print(" frames, ");
+  Serial.print((riffSize + 8) / 1024);
+  Serial.println(" KB");
+}
+
 
 CameraModule::CameraModule() : camera_ready(false), frame_count(0) {
 }
@@ -143,7 +319,7 @@ bool CameraModule::captureJPEG(FrameBuffer& fb) {
     }
 
 #if ENABLE_CAMERA
-    camera_fb_t* pic = esp_camera_fb_get();
+    camera_fb_t *pic = esp_camera_fb_get();
 
     if (!pic) {
         LOG_ERROR("Failed to capture frame");
@@ -154,6 +330,8 @@ bool CameraModule::captureJPEG(FrameBuffer& fb) {
     fb.length = pic->len;
     fb.timestamp = millis();
     frame_count++;
+    
+    esp_camera_fb_return(pic);
 
     LOG_INFO("Captured JPEG frame: %d bytes", fb.length);
     return true;
@@ -171,11 +349,15 @@ bool CameraModule::captureRaw(FrameBuffer& fb) {
 void CameraModule::releaseFrameBuffer(FrameBuffer& fb) {
 #if ENABLE_CAMERA
     if (fb.buffer) {
+        
         camera_fb_t pic;
         pic.buf = fb.buffer;
+        pic.len = fb.length;
         esp_camera_fb_return((camera_fb_t*)&pic);
         fb.buffer = nullptr;
         fb.length = 0;
+        
+        LOG_INFO("Clear buffer");
     }
 #endif
 }
@@ -206,3 +388,38 @@ bool CameraModule::isReady() {
 uint32_t CameraModule::getFrameCount() {
     return frame_count;
 }
+
+
+void CameraModule::recordVideoAVI(fs::FS &fs, const char* filename){
+    // Start AVI file
+    LOG_INFO("recordVideoAVI Start %s",filename);
+    
+    if (!aviStart(SD_MMC, filename)) {
+        esp_camera_deinit();
+        return;
+    }
+    LOG_INFO("recordVideoAVI Start end");
+    unsigned long frameInterval = 1000 / 30; // 1000 divide by fps
+    unsigned long recordStart = millis();
+    unsigned long lastFrame = 0;
+    unsigned long duration = 10;
+
+    while (millis() - recordStart < (unsigned long)duration * 1000) {
+        unsigned long now = millis();
+        if (now - lastFrame < frameInterval) continue;
+        lastFrame = now;
+
+        camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+      LOG_INFO("Frame capture failed");
+      continue;
+    }
+
+    aviWriteFrame(fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+    }
+
+    aviFinalize();
+}
+
+

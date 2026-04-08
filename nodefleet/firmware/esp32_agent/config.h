@@ -4,8 +4,8 @@
 // ============================================================================
 // Network Configuration
 // ============================================================================
-#define WIFI_SSID         "ASUS"
-#define WIFI_PASSWORD     "adminadmin"
+#define WIFI_SSID         "ASUS"//"ESP Router"
+#define WIFI_PASSWORD     "adminadmin"//"Blucap514!"
 #define USE_WIFI          1  // 1 = try WiFi first, 0 = skip WiFi
 #define USE_4G            1  // 1 = try 4G modem, 0 = skip 4G
 
@@ -56,7 +56,7 @@
 // ============================================================================
 // Pairing & Device Identity
 // ============================================================================
-#define PAIRING_CODE      "9KA7BZ"  // Set during provisioning
+#define PAIRING_CODE      "PJ498X"  // Set during provisioning
 #define DEVICE_MODEL      "Waveshare-ESP32-S3-SIM7670G"
 #define FIRMWARE_VERSION  "1.1.0"
 
@@ -97,11 +97,18 @@
 #define CAMERA_PWDN       -1  // Not used
 #define CAMERA_RESET      -1  // Not used
 
+/*
 // SD Card (SPI mode - disabled, pins conflict with camera when enabled)
 #define SD_MOSI           11  // GPIO11
 #define SD_MISO           13  // GPIO13
 #define SD_CLK            12  // GPIO12
 #define SD_CS             10  // GPIO10
+*/
+// SD Card pins (GPIO 46 freed for camera PCLK — card detect removed)
+#define SDMMC_CLK   5
+#define SDMMC_CMD   4
+#define SDMMC_DATA  6
+#define SD_CS       -1
 
 // Status LED
 #define STATUS_LED_PIN    7   // GPIO7
@@ -136,8 +143,8 @@
 // ============================================================================
 #define ENABLE_GPS        1
 #define ENABLE_CAMERA     1  // OV2640 DVP - pins from branch-to-merge
-#define ENABLE_AUDIO      0  // Requires I2S mic hardware
-#define ENABLE_SD_CARD    0  // Disabled - SDMMC crashes without card inserted
+#define ENABLE_AUDIO      1  // Requires I2S mic hardware
+#define ENABLE_SD_CARD    1  // Disabled - SDMMC crashes without card inserted
 #define ENABLE_NVS        1
 #define ENABLE_WATCHDOG   1
 #define WATCHDOG_TIMEOUT_MS 120000  // 2 minutes
@@ -146,13 +153,13 @@
 // Debug & Logging
 // ============================================================================
 #define DEBUG_SERIAL      1
-#define DEBUG_LEVEL       4  // 0=none, 1=error, 2=warn, 3=info, 4=verbose
+#define DEBUG_LEVEL       3  // 0=none, 1=error, 2=warn, 3=info, 4=verbose
 
 #if DEBUG_SERIAL
   #define LOG_ERROR(fmt, ...) do { if(DEBUG_LEVEL >= 1) Serial.printf("[ERROR] " fmt "\n", ##__VA_ARGS__); } while(0)
-  #define LOG_WARN(fmt, ...)  do { if(DEBUG_LEVEL >= 1) Serial.printf("[WARN] " fmt "\n", ##__VA_ARGS__); } while(0)
-  #define LOG_INFO(fmt, ...)  do { if(DEBUG_LEVEL >= 2) Serial.printf("[INFO] " fmt "\n", ##__VA_ARGS__); } while(0)
-  #define LOG_VERBOSE(fmt, ...)  do { if(DEBUG_LEVEL >= 3) Serial.printf("[VERBOSE] " fmt "\n", ##__VA_ARGS__); } while(0)
+  #define LOG_WARN(fmt, ...)  do { if(DEBUG_LEVEL >= 2) Serial.printf("[WARN] " fmt "\n", ##__VA_ARGS__); } while(0)
+  #define LOG_INFO(fmt, ...)  do { if(DEBUG_LEVEL >= 3) Serial.printf("[INFO] " fmt "\n", ##__VA_ARGS__); } while(0)
+  #define LOG_VERBOSE(fmt, ...)  do { if(DEBUG_LEVEL >= 4) Serial.printf("[VERBOSE] " fmt "\n", ##__VA_ARGS__); } while(0)
 #else
   #define LOG_ERROR(fmt, ...)
   #define LOG_WARN(fmt, ...)
