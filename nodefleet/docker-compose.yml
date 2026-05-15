@@ -201,19 +201,11 @@ services:
       timeout: 5s
       retries: 5
 
-  ngrok:
-    image: ngrok/ngrok:latest
-    container_name: nodefleet-ngrok
-    restart: unless-stopped
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-    command: http nginx:80 --url=nodefleet.ngrok.dev
-    ports:
-      - "50040:4040"
-    depends_on:
-      - nginx
-    networks:
-      - nodefleet-net
+  # Removed 2026-05-15: nodefleet.ngrok.dev is now served by the host's
+  # master ngrok agent (yulior-managed, ngrok-master.service), which
+  # tunnels host.docker.internal:50080 → nodefleet.ngrok.dev. The
+  # previous per-stack agent here would have fought the master on the
+  # same hostname (ERR_NGROK_334). Inspector port 50040 freed.
 
   prometheus:
     image: prom/prometheus:latest
