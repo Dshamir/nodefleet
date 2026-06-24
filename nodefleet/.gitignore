@@ -1,0 +1,15 @@
+# NodeFleet — generated, dependency, and sensitive runtime artifacts.
+# backups/ holds pg_dump/MinIO/Redis snapshots (credentials + data) — never commit.
+backups/
+
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Next.js build output
+web/.next/
+web/next-env.d.ts
+web/tsconfig.tsbuildinfo
+
+# PlatformIO firmware build output
+firmware/esp32_agent/.pio/
