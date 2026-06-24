@@ -275,6 +275,51 @@ docker compose build
 docker compose up -d
 ```
 
+> **⚠️ Back up before schema-affecting rebuilds.** Running `drizzle-kit push`
+> (`npm run db:push`) against a changed schema can DROP and recreate tables,
+> destroying data. On 2026-06-24 a rebuild wiped every Postgres table with no
+> backup to restore from. Always run `./scripts/backup.sh` first.
+
+---
+
+## Backups & Restore
+
+Backups cover all three stateful services: **PostgreSQL** (`pg_dump`), **MinIO**
+object storage, and **Redis** (RDB snapshot).
+
+### Scheduled (automatic)
+
+`scripts/backup-cron.sh` runs `backup.sh` then prunes to the newest `RETAIN`
+backups (default 14). It is installed as a user crontab entry running daily at
+02:30 local time:
+
+```cron
+30 2 * * * cd /path/to/nodefleet && RETAIN=14 ./scripts/backup-cron.sh >> ./backups/backup.log 2>&1
+```
+
+Adjust retention by changing `RETAIN`. Output is logged to `backups/backup.log`.
+
+### Manual
+
+```bash
+./scripts/backup.sh            # create a new timestamped backup
+./scripts/backup.sh --list     # list existing backups
+```
+
+Backups are written to `backups/<YYYYmmdd_HHMMSS>/` (gitignored — they contain
+DB dumps and credentials).
+
+### Restore
+
+```bash
+./scripts/backup.sh --restore <timestamp>   # e.g. 20260624_125118
+```
+
+This overwrites current PostgreSQL, MinIO, and Redis data (5-second abort
+window) and restarts Redis. If only the schema is gone (tables dropped, no
+backup), recreate it instead with `npm run db:push` from `web/`, then
+`./nodefleet.sh migrate` for the supplementary tables.
+
 ---
 
 ## Health Checks

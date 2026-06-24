@@ -1,10 +1,41 @@
 # NodeFleet - Known Issues, Gaps & Recommendations
 
-Last updated: 2026-03-30
+Last updated: 2026-06-24
 
 ---
 
 ## Resolved Issues
+
+### Database Wiped on Stack Rebuild — No Backup to Restore — RESOLVED (mitigated)
+
+**Status:** Recovered + mitigated (2026-06-24)
+
+**Symptom:** Login at `https://nodefleet.ngrok.dev/login` failed for everyone.
+The web container logged `Auth error: relation "users" does not exist`. The
+`nodefleet` Postgres database had **zero tables**.
+
+**Root cause:** A stack rebuild on 2026-06-23 dropped every table in the
+original volume (`nodefleet_postgres_data`, initialized 2026-05-07) — almost
+certainly a `drizzle-kit push` against a changed schema, which drops/recreates
+tables. The volume was the original (not a fresh one), but its contents were
+gone. **No backup, dump, or filesystem snapshot existed** (the host is ext4;
+`scripts/backup.sh` had never been run), so the original users and device data
+were **unrecoverable**.
+
+**Recovery:**
+1. `npm run db:push` (drizzle-kit) from `web/` recreated all 75 tables from
+   `web/src/lib/db/schema.ts`.
+2. `./nodefleet.sh migrate` added the supplementary tables (audit_logs,
+   device_settings, alert_rules, webhooks) — note this step alone is
+   insufficient; it assumes the base tables already exist.
+3. Recreated an admin user (passwords are bcrypt-only, never recoverable).
+
+**Mitigation (prevents recurrence):** automated daily backups via
+`scripts/backup-cron.sh` (cron 02:30, 14-backup retention) covering Postgres +
+MinIO + Redis. See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) → *Backups &
+Restore*. **Always back up before schema-affecting rebuilds.**
+
+---
 
 ### 0. Network Discovery Showed "No Devices Found" Despite Online Device — RESOLVED
 

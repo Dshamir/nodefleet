@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Automated database backups** — `scripts/backup-cron.sh` wraps the existing
+  `scripts/backup.sh` (pg_dump + MinIO + Redis RDB) and prunes to the newest
+  `RETAIN` backups (default 14). Installed as a user crontab entry at 02:30
+  daily. Restore is unchanged: `scripts/backup.sh --restore <timestamp>`.
+- **`.gitignore`** — scoped ignore so `backups/` (DB dumps + credentials),
+  `node_modules`, Next.js build output, and the PlatformIO `.pio` dir are never
+  committed.
+
+### Fixed
+
+- Recovered from a full schema loss after a stack rebuild dropped every
+  Postgres table (no backup existed at the time). Schema rebuilt from
+  `web/src/lib/db/schema.ts` via `drizzle-kit push`, supplementary tables via
+  `nodefleet.sh migrate`, and an admin user recreated. See
+  [KNOWN_ISSUES.md](./KNOWN_ISSUES.md). The automated backups above close this gap.
+
 ## [2.1.0] - 2026-03-29
 
 ### Full Admin Console Release

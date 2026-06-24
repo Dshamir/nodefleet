@@ -170,7 +170,7 @@ The firmware has been tested and verified with the **Waveshare ESP32-S3-SIM7670G
 | PSRAM (8MB OPI) | Pending Monday | Need Arduino IDE sdkconfig extraction |
 | GPS/GNSS | Pending Monday | GNSS module needs USB power cycle to recover (AT+CGPSINFO returns ERROR) |
 | Monitoring stack | Running | Prometheus + Grafana + node-exporter (ports 50090, 50030) |
-| Backup system | Working | pg_dump + MinIO + Redis via scripts/backup.sh |
+| Backup system | Automated | Daily 02:30 cron (`scripts/backup-cron.sh`): pg_dump + MinIO + Redis, 14-backup retention; manual run + restore via `scripts/backup.sh` |
 
 ## Documentation
 
