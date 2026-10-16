@@ -22,7 +22,7 @@
 // ============================================================================
 // Server Configuration — Remote (ngrok/LTE)
 // ============================================================================
-#define NGROK_DOMAIN      "nodefleet.ngrok.dev"
+#define NGROK_DOMAIN      "nodefleet.nexless.cloud"
 #define NGROK_PORT        443   // HTTPS/WSS through ngrok
 // Connection mode: "auto" = try local first, fall back to remote
 //                  "local" = always use SERVER_HOST (WiFi only)

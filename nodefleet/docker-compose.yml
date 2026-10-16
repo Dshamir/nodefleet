@@ -102,7 +102,7 @@ services:
     environment:
       PORT: 3000
       HOSTNAME: 0.0.0.0
-      AUTH_URL: https://nodefleet.ngrok.dev
+      AUTH_URL: https://nodefleet.nexless.cloud
       AUTH_TRUST_HOST: "true"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]

@@ -131,7 +131,7 @@ String WiFiProvisioner::generateHTML() {
         "</div>"
         "<div class='section'><div class='section-title'>Remote Access</div>"
         "<label>ngrok Domain</label>"
-        "<input type='text' name='ngrok_domain' value='" + String(NGROK_DOMAIN) + "' placeholder='nodefleet.ngrok.dev'>"
+        "<input type='text' name='ngrok_domain' value='" + String(NGROK_DOMAIN) + "' placeholder='nodefleet.nexless.cloud'>"
         "<label>Connection Mode</label>"
         "<select name='conn_mode'>"
         "<option value='auto' selected>Auto (try local, fall back to remote)</option>"
