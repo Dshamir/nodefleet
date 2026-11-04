@@ -30,7 +30,14 @@ export APP_VERSION GIT_COMMIT GIT_BRANCH GIT_MESSAGE DEPLOY_USER
 
 # ── Constants ───────────────────────────────────────────────────────────────
 BOX_W=66
-NGROK_URL="https://nodefleet.ngrok.dev"
+# Public URL is a Cloudflare tunnel row owned by yulior (project `nodefleet`, http://localhost:8100,
+# origin :50080 = nginx). ngrok was retired 2026-10-17 — this script no longer probes an ngrok
+# agent; `tunnel`/status read yulior's row and warn when the origin port is not nginx's.
+PUBLIC_DOMAIN="${PUBLIC_DOMAIN:-nodefleet.nexless.cloud}"
+PUBLIC_URL="https://${PUBLIC_DOMAIN}"
+NGINX_PORT=50080
+YULIOR_API="${YULIOR_API:-http://localhost:8100/api}"
+YULIOR_PROJECT="${YULIOR_PROJECT:-nodefleet}"
 APP_SERVICES=(web ws-server nginx)
 
 # ── Help ────────────────────────────────────────────────────────────────────
@@ -51,7 +58,7 @@ Commands:
   down                       Stop all containers (volumes preserved)
   health                     Probe all service health endpoints
   bump [patch|minor|major]   Bump version, sync, auto-commit
-  tunnel                     Show ngrok tunnel status & URL
+  tunnel                     Show yulior's Cloudflare tunnel row (public URL, origin port)
   setup                      Bootstrap .env from .env.example
   simulate [--pair CODE]     Run device simulator (no hardware needed)
   compile                    Compile ESP32 firmware only (no flash)
@@ -63,7 +70,7 @@ Commands:
   migrate                    Create/verify all database tables
   -h, --help                 Show this help
 
-Services: web, ws-server, nginx, postgres, redis, minio, mqtt, mailhog, ngrok
+Services: web, ws-server, nginx, postgres, redis, minio, mqtt, mailhog  (public URL = yulior Cloudflare tunnel)
 
 Examples:
   ./nodefleet.sh                            # Full build + start + health check
@@ -76,7 +83,7 @@ Examples:
   ./nodefleet.sh health                     # Check all service endpoints
   ./nodefleet.sh bump                       # Bump patch version (0.1.0 → 0.1.1)
   ./nodefleet.sh bump minor                 # Bump minor version (0.1.1 → 0.2.0)
-  ./nodefleet.sh tunnel                     # Show ngrok tunnel info
+  ./nodefleet.sh tunnel                     # Show yulior tunnel row for nodefleet.nexless.cloud
   ./nodefleet.sh simulate --pair ABC123     # Run device simulator
   ./nodefleet.sh flash                      # Compile + flash ESP32
   ./nodefleet.sh mqtt                       # MQTT broker status
@@ -174,7 +181,6 @@ do_setup() {
   echo -e "${YELLOW}  Review .env and update these for production:${RESET}"
   echo -e "${YELLOW}    - NEXTAUTH_SECRET (auto-generated, but rotate for prod)${RESET}"
   echo -e "${YELLOW}    - STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET${RESET}"
-  echo -e "${YELLOW}    - NGROK_AUTHTOKEN (pre-configured for nodefleet.ngrok.dev)${RESET}"
   echo -e "${YELLOW}    - MinIO credentials (minioadmin/minioadmin)${RESET}"
   echo -e "${YELLOW}    - PostgreSQL credentials${RESET}"
   echo ""
@@ -407,10 +413,6 @@ print_status() {
     echo -e "  ${YELLOW}${BOLD}${running}/${total} services running${RESET}"
   fi
 
-  # ngrok URL
-  local ngrok_url=""
-  ngrok_url=$(curl -sf http://localhost:50040/api/tunnels 2>/dev/null | grep -oP '"public_url"\s*:\s*"\K[^"]+' | head -1 || true)
-
   echo ""
   echo -e "  ${BOLD}URLs:${RESET}"
   echo -e "    Dashboard:      ${CYAN}http://localhost:50080${RESET}"
@@ -421,12 +423,8 @@ print_status() {
   echo -e "    MinIO Console:  ${CYAN}http://localhost:50901${RESET}"
   echo -e "    PostgreSQL:     ${CYAN}localhost:50432${RESET}"
   echo -e "    Redis:          ${CYAN}localhost:50379${RESET}"
-  if [ -n "$ngrok_url" ]; then
-    echo ""
-    echo -e "    ${BOLD}${GREEN}ngrok Tunnel:  ${ngrok_url}${RESET}"
-  else
-    echo -e "    ngrok Tunnel:  ${DIM}(not connected)${RESET}"
-  fi
+  echo ""
+  print_tunnel_line "    "
   echo ""
 }
 
@@ -557,9 +555,9 @@ do_health() {
   probe_container "mqtt            → container alive"  "mqtt"
   probe_container "mailhog         → container alive"  "mailhog"
 
-  # ── Tunnel ──
-  echo -e "  ${BOLD}Tunnel${RESET}"
-  probe_http "ngrok           → nodefleet.ngrok.dev"    "${NGROK_URL}"
+  # ── Public (Cloudflare tunnel via yulior) ──
+  echo -e "  ${BOLD}Public${RESET}"
+  probe_http "cloudflare      → ${PUBLIC_DOMAIN}"    "${PUBLIC_URL}"
 
   echo ""
   local total=$((pass + fail))
@@ -571,28 +569,42 @@ do_health() {
   echo ""
 }
 
-# ── Tunnel info ─────────────────────────────────────────────────────────────
-do_tunnel() {
-  echo -e "${BOLD}ngrok Tunnel Status${RESET}"
-  echo ""
+# ── Public tunnel (Cloudflare via yulior) ───────────────────────────────────
+# Echoes "<port> <provider> <live|edge-down>" for this stack's public hostname, or nothing when
+# yulior is down or has no row. Read-only: the tunnel belongs to yulior; changes go through
+# `yulior cf diff` → owner YES → `yulior cf apply --yes` on the yulior host, never from here.
+yulior_tunnel_row() {
+  curl -s -m 2 "$YULIOR_API/tunnels" 2>/dev/null | python3 -c '
+import sys,json
+try:
+    d=json.load(sys.stdin); rows=d.get("tunnels",[]) if isinstance(d,dict) else d
+    for t in rows:
+        if t.get("domain")==sys.argv[1]: print(t.get("port"), t.get("provider"), "live" if t.get("live") else "edge-down"); break
+except Exception: pass' "$PUBLIC_DOMAIN" 2>/dev/null || true
+}
 
-  local ngrok_url=""
-  ngrok_url=$(curl -sf http://localhost:50040/api/tunnels 2>/dev/null | grep -oP '"public_url"\s*:\s*"\K[^"]+' | head -1 || true)
-
-  if [ -n "$ngrok_url" ]; then
-    echo -e "  ${GREEN}●${RESET} Tunnel active"
-    echo -e "  ${BOLD}URL:${RESET} ${CYAN}${ngrok_url}${RESET}"
-    echo ""
-    echo -e "  Routes:"
-    echo -e "    Dashboard:     ${CYAN}${ngrok_url}/${RESET}"
-    echo -e "    WebSocket:     ${CYAN}${ngrok_url}/ws${RESET}"
-    echo -e "    API:           ${CYAN}${ngrok_url}/api/${RESET}"
-  else
-    echo -e "  ${RED}○${RESET} Tunnel not connected"
-    echo ""
-    echo -e "  ${DIM}ngrok is part of docker compose — run ./nodefleet.sh to start all services.${RESET}"
-    echo -e "  ${DIM}Check NGROK_AUTHTOKEN in .env if tunnel fails to connect.${RESET}"
+# One line for the public URL; WARNs when yulior's origin port is not nginx's (the Cloudflare 502 class).
+print_tunnel_line() {
+  local indent="${1:-  }" row
+  row=$(yulior_tunnel_row || true)
+  if [ -z "$row" ]; then
+    echo -e "${indent}Public:         ${DIM}${PUBLIC_URL} (yulior ${YULIOR_API} unreachable or no tunnel row)${RESET}"
+    return 0
   fi
+  set -- $row
+  if [ "$1" != "$NGINX_PORT" ]; then
+    echo -e "${indent}${YELLOW}Public:         ${PUBLIC_URL} → :$1 via $2 ($3) — origin != nginx :${NGINX_PORT}; the public site 502s until the yulior row is re-pointed (yulior cf diff → YES → apply)${RESET}"
+  else
+    echo -e "${indent}${BOLD}${GREEN}Public:         ${PUBLIC_URL}${RESET} → :$1 via $2 ($3)"
+  fi
+}
+
+do_tunnel() {
+  echo -e "${BOLD}Public tunnel (Cloudflare via yulior, project ${YULIOR_PROJECT})${RESET}"
+  echo ""
+  print_tunnel_line
+  echo ""
+  echo -e "  ${DIM}Routes behind nginx :${NGINX_PORT}: /  (dashboard)   /ws  (WebSocket)   /api/  (API)${RESET}"
   echo ""
 }
 

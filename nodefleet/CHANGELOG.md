@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed — `nodefleet.sh`: ngrok decay removed (2026-11-04)
+
+- ngrok was retired 2026-10-17; https://nodefleet.nexless.cloud is a Cloudflare tunnel
+  row owned by yulior (project `nodefleet`, origin :50080 = nginx). `nodefleet.sh` no
+  longer probes the ngrok inspector (`:50040`) or references `nodefleet.ngrok.dev` /
+  `NGROK_AUTHTOKEN`; `tunnel`, `--status` and `health` read yulior's row
+  (`http://localhost:8100/api/tunnels`) and warn when the origin port is not nginx's
+  (that mismatch is the Cloudflare 502 class). Public hostname changes go through
+  `yulior cf diff` → owner YES → `yulior cf apply --yes`, never from this script.
+
 ### Added
 
 - **Automated database backups** — `scripts/backup-cron.sh` wraps the existing
