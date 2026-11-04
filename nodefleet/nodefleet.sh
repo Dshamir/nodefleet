@@ -580,13 +580,13 @@ try:
     d=json.load(sys.stdin); rows=d.get("tunnels",[]) if isinstance(d,dict) else d
     for t in rows:
         if t.get("domain")==sys.argv[1]: print(t.get("port"), t.get("provider"), "live" if t.get("live") else "edge-down"); break
-except Exception: pass' "$PUBLIC_DOMAIN" 2>/dev/null
+except Exception: pass' "$PUBLIC_DOMAIN" 2>/dev/null || true
 }
 
 # One line for the public URL; WARNs when yulior's origin port is not nginx's (the Cloudflare 502 class).
 print_tunnel_line() {
   local indent="${1:-  }" row
-  row=$(yulior_tunnel_row)
+  row=$(yulior_tunnel_row || true)
   if [ -z "$row" ]; then
     echo -e "${indent}Public:         ${DIM}${PUBLIC_URL} (yulior ${YULIOR_API} unreachable or no tunnel row)${RESET}"
     return 0
